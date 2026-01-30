@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
@@ -63,6 +63,9 @@ export function CalendarScreen() {
   const [showForm, setShowForm] = useState(false);
   const [editingSession, setEditingSession] = useState<CalendarSession | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const weekHeaderScrollRef = useRef<HTMLDivElement>(null);
+  const weekContentScrollRef = useRef<HTMLDivElement>(null);
+  const weekDaysColumnScrollRef = useRef<HTMLDivElement>(null);
 
   // Create tutorial steps dynamically based on view
   const getTutorialSteps = (): TutorialStep[] => {
@@ -453,106 +456,236 @@ export function CalendarScreen() {
       )}
 
       {/* Week View */}
-      {view === 'week' && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">
-            {eachDayOfInterval({
-              start: startOfWeek(currentDate, { weekStartsOn: 1 }),
-              end: endOfWeek(currentDate, { weekStartsOn: 1 }),
-            }).map((day, index) => {
-              const isToday = toISODate(day) === toISODate(new Date());
-              const weekdayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`p-2 text-center border-r border-gray-200 dark:border-gray-700 ${
-                    isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
+      {view === 'week' && (() => {
+        const weekDays = eachDayOfInterval({
+          start: startOfWeek(currentDate, { weekStartsOn: 1 }),
+          end: endOfWeek(currentDate, { weekStartsOn: 1 }),
+        });
+        const weekdayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        
+        // Generate time slots from 6:00 to 23:00 (each hour)
+        const timeSlots: number[] = [];
+        for (let hour = 6; hour <= 23; hour++) {
+          timeSlots.push(hour);
+        }
+
+        // Fixed width for each hour column (must match in header and grid)
+        const HOUR_COLUMN_WIDTH = 120;
+
+        // Sync horizontal scroll between header and content
+        const handleHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
+          if (weekContentScrollRef.current) {
+            weekContentScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+          }
+        };
+
+        const handleContentScroll = (e: React.UIEvent<HTMLDivElement>) => {
+          if (weekHeaderScrollRef.current) {
+            weekHeaderScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+          }
+        };
+
+        // Sync vertical scroll between days column and content grid
+        const handleDaysColumnScroll = (e: React.UIEvent<HTMLDivElement>) => {
+          if (weekContentScrollRef.current) {
+            weekContentScrollRef.current.scrollTop = e.currentTarget.scrollTop;
+          }
+        };
+
+        const handleContentVerticalScroll = (e: React.UIEvent<HTMLDivElement>) => {
+          if (weekDaysColumnScrollRef.current) {
+            weekDaysColumnScrollRef.current.scrollTop = e.currentTarget.scrollTop;
+          }
+        };
+
+        // Helper function to calculate column index and width for a session
+        const getSessionColumn = (session: CalendarSession) => {
+          const [hours, minutes] = session.start_time.split(':').map(Number);
+          const startMinutes = hours * 60 + minutes;
+          
+          // Find which hour slot this session starts in
+          const slotIndex = timeSlots.findIndex((slotHour) => {
+            const slotStartMinutes = slotHour * 60;
+            return startMinutes >= slotStartMinutes && startMinutes < slotStartMinutes + 60;
+          });
+          
+          if (slotIndex === -1) return { slotIndex: -1, leftPercent: 0, widthPercent: 0 };
+          
+          // Calculate position within the hour slot (0-60 minutes)
+          const slotStartMinutes = timeSlots[slotIndex] * 60;
+          const offsetInSlot = startMinutes - slotStartMinutes;
+          const leftPercent = (offsetInSlot / 60) * 100;
+          
+          // Calculate width based on duration
+          const widthPercent = Math.min((session.duration_minutes / 60) * 100, 100);
+          
+          return { slotIndex, leftPercent, widthPercent };
+        };
+
+        // Group sessions by day
+        const sessionsByDay = weekDays.map((day) => {
+          const daySessions = getSessionsForDate(day);
+          return daySessions.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        });
+
+        return (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            {/* Fixed header with hours */}
+            <div className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex">
+                {/* Empty cell for days column */}
+                <div className="w-20 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"></div>
+                {/* Hours header - scrollable horizontally, synced with content */}
+                <div 
+                  ref={weekHeaderScrollRef}
+                  onScroll={handleHeaderScroll}
+                  className="flex flex-1 overflow-x-auto"
+                  style={{ scrollbarWidth: 'thin' }}
                 >
-                  <div className={`text-xs text-gray-500 dark:text-gray-400 mb-1`}>
-                    {weekdayNames[index]}
-                  </div>
-                  <div
-                    className={`text-sm font-semibold ${
-                      isToday ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'
-                    }`}
-                  >
-                    {day.getDate()}
-                  </div>
+                  {timeSlots.map((hour) => (
+                    <div
+                      key={hour}
+                      className="flex-shrink-0 p-2 text-center border-r border-gray-200 dark:border-gray-700"
+                      style={{ width: `${HOUR_COLUMN_WIDTH}px` }}
+                    >
+                      <div className="text-xs font-semibold text-gray-900 dark:text-white">
+                        {String(hour).padStart(2, '0')}:00
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-          <div className="grid grid-cols-7">
-            {eachDayOfInterval({
-              start: startOfWeek(currentDate, { weekStartsOn: 1 }),
-              end: endOfWeek(currentDate, { weekStartsOn: 1 }),
-            }).map((day) => {
-              const daySessions = getSessionsForDate(day).sort((a, b) =>
-                a.start_time.localeCompare(b.start_time)
-              );
-              const isToday = toISODate(day) === toISODate(new Date());
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`min-h-96 p-2 border-r border-gray-200 dark:border-gray-700 ${
-                    isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
-                >
-                  <div className="space-y-2">
-                    {daySessions.map((session) => {
-                      const client = clients.find((c) => c.id === session.client_id);
-                      const paymentStatus = sessionStatuses.get(session.id);
-                      const isPaused = isSessionInPause(session);
-                      const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
-                      return (
+              </div>
+            </div>
+
+            {/* Scrollable content area */}
+            <div className="flex" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+              {/* Days column - scrollable vertically, synced with content */}
+              <div 
+                ref={weekDaysColumnScrollRef}
+                onScroll={handleDaysColumnScroll}
+                className="flex-shrink-0 w-20 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 sticky left-0 z-10 overflow-y-auto"
+                style={{ scrollbarWidth: 'thin', maxHeight: 'calc(100vh - 300px)' }}
+              >
+                {weekDays.map((day, index) => {
+                  const isToday = toISODate(day) === toISODate(new Date());
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`border-b border-gray-200 dark:border-gray-700 p-2 text-center ${
+                        isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
+                      style={{ height: '60px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+                    >
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        {weekdayNames[index]}
+                      </div>
+                      <div
+                        className={`text-sm font-semibold ${
+                          isToday ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'
+                        }`}
+                      >
+                        {day.getDate()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Scrollable hours grid - synced with header horizontally and days column vertically */}
+              <div 
+                ref={weekContentScrollRef}
+                onScroll={(e) => {
+                  handleContentScroll(e);
+                  handleContentVerticalScroll(e);
+                }}
+                className="flex flex-1 flex-col overflow-auto"
+                style={{ scrollbarWidth: 'thin', maxHeight: 'calc(100vh - 300px)' }}
+              >
+                {weekDays.map((day, dayIndex) => {
+                  const daySessions = sessionsByDay[dayIndex];
+                  const isToday = toISODate(day) === toISODate(new Date());
+                  
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`flex relative ${
+                        isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
+                      style={{ minHeight: '60px' }}
+                    >
+                      {/* Hour slots - exact width match with header */}
+                      {timeSlots.map((hour) => (
                         <div
-                          key={session.id}
-                          onClick={() => handleSessionSelect(session)}
-                          className={`p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80 overflow-hidden`}
-                        >
-                          {/* Icons row */}
-                          {(hasNotes(session) || isCustomEdited(session)) && (
-                            <div className="flex items-center gap-1 mb-1">
+                          key={hour}
+                          className="flex-shrink-0 border-r border-gray-100 dark:border-gray-700 border-b border-gray-200 dark:border-gray-700 relative"
+                          style={{ width: `${HOUR_COLUMN_WIDTH}px`, height: '60px' }}
+                        ></div>
+                      ))}
+                      
+                      {/* Sessions positioned absolutely */}
+                      {daySessions.map((session) => {
+                        const client = clients.find((c) => c.id === session.client_id);
+                        const paymentStatus = sessionStatuses.get(session.id);
+                        const isPaused = isSessionInPause(session);
+                        const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
+                        const { slotIndex, leftPercent, widthPercent } = getSessionColumn(session);
+                        
+                        // Skip sessions that start before 6:00 or after 23:00
+                        const [hours] = session.start_time.split(':').map(Number);
+                        if (hours < 6 || hours > 23 || slotIndex === -1) return null;
+                        
+                        // Calculate position using exact column width
+                        const left = slotIndex * HOUR_COLUMN_WIDTH + (leftPercent / 100) * HOUR_COLUMN_WIDTH;
+                        const width = (widthPercent / 100) * HOUR_COLUMN_WIDTH;
+                        
+                        return (
+                          <div
+                            key={session.id}
+                            onClick={() => handleSessionSelect(session)}
+                            className={`absolute rounded p-1 ${colorClasses} cursor-pointer hover:opacity-80 overflow-hidden text-xs shadow-sm`}
+                            style={{
+                              left: `${left}px`,
+                              width: `${Math.max(width, 80)}px`, // Minimum width 80px
+                              top: '2px',
+                              bottom: '2px',
+                            }}
+                            title={`${formatTime(session.start_time)} - ${client?.full_name || 'Неизвестный клиент'} (${session.duration_minutes} мин)`}
+                          >
+                            {/* Time with icons */}
+                            <div className="font-semibold truncate flex items-center gap-1">
                               {hasNotes(session) && (
-                                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                               )}
                               {isCustomEdited(session) && (
-                                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                               )}
+                              {formatTime(session.start_time)}
                             </div>
-                          )}
-                          {/* Time row */}
-                          <div className="text-xs font-semibold mb-1">
-                            {formatTime(session.start_time)}
+                            {/* Client name */}
+                            <div className="truncate overflow-hidden whitespace-nowrap">
+                              {client?.full_name || 'Неизвестный'}
+                            </div>
+                            {/* Duration - only show if there's space */}
+                            {width >= 100 && (
+                              <div className="text-xs opacity-75">
+                                {session.duration_minutes} мин
+                              </div>
+                            )}
                           </div>
-                          {/* Client name row - truncate if too long */}
-                          <div className="text-xs truncate overflow-hidden whitespace-nowrap" title={client?.full_name}>
-                            {client?.full_name || 'Неизвестный клиент'}
-                          </div>
-                          {/* Duration row */}
-                          <div className="text-xs opacity-75">
-                            {session.duration_minutes} мин
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {daySessions.length === 0 && (
-                      <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">
-                        Нет занятий
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Day View */}
       {view === 'day' && (
