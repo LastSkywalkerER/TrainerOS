@@ -10,6 +10,8 @@ const path = require('path');
 
 // Icon sizes for PWA
 const iconSizes = [72, 96, 128, 144, 152, 192, 384, 512];
+// Favicon sizes
+const faviconSizes = [16, 32];
 
 async function generateIcons() {
   try {
@@ -52,6 +54,29 @@ async function generateIcons() {
       
       console.log(`✓ Generated icon-${size}x${size}.png`);
     }
+
+    console.log('\nGenerating favicons...');
+
+    // Generate favicon PNGs
+    for (const size of faviconSizes) {
+      const outputPath = path.join(outputDir, `favicon-${size}x${size}.png`);
+      
+      await sharp(svgBuffer)
+        .resize(size, size)
+        .png()
+        .toFile(outputPath);
+      
+      console.log(`✓ Generated favicon-${size}x${size}.png`);
+    }
+
+    // Generate favicon.ico (32x32)
+    const faviconIcoPath = path.join(__dirname, '../public/favicon.ico');
+    await sharp(svgBuffer)
+      .resize(32, 32)
+      .png()
+      .toFile(faviconIcoPath);
+    
+    console.log(`✓ Generated favicon.ico`);
 
     console.log('\n✅ All icons generated successfully!');
   } catch (error) {
