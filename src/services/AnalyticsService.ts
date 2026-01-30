@@ -7,6 +7,7 @@ import {
 } from '../db/types';
 import { calculateSessionPrice, getEffectiveAllocatedAmount } from '../utils/calculations';
 import { parseISO, startOfMonth, endOfMonth, isWithinInterval, format } from 'date-fns';
+import { isDateInRange } from '../utils/dateUtils';
 
 export class AnalyticsService {
   async getClientStats(clientId: string): Promise<ClientStats> {
@@ -20,6 +21,11 @@ export class AnalyticsService {
       .equals(clientId)
       .toArray();
 
+    const client = await db.clients.get(clientId);
+    if (!client) {
+      throw new Error(`Client with id ${clientId} not found`);
+    }
+
     let total_sessions = 0;
     let paid_sessions = 0;
     let unpaid_sessions = 0;
@@ -27,10 +33,24 @@ export class AnalyticsService {
     let total_debt = 0;
     let nextUnpaidSession: CalendarSession | null = null;
 
+    // Helper function to check if session is in pause period
+    const isSessionInPause = (session: CalendarSession): boolean => {
+      if (!client.pause_from || !client.pause_to) {
+        return false;
+      }
+      const sessionDate = parseISO(session.date);
+      return isDateInRange(sessionDate, client.pause_from, client.pause_to);
+    };
+
     // Calculate effective allocated amounts considering unallocated balance
     // This distributes positive balance automatically to unpaid sessions
     for (const session of sessions) {
       if (session.status === 'canceled') {
+        continue;
+      }
+
+      // Skip sessions in pause period - they don't count towards debt
+      if (isSessionInPause(session)) {
         continue;
       }
 
@@ -78,6 +98,10 @@ export class AnalyticsService {
     let total_effective_allocated = 0;
     for (const session of sessions) {
       if (session.status === 'canceled') {
+        continue;
+      }
+      // Skip sessions in pause period - they don't count towards allocated amount
+      if (isSessionInPause(session)) {
         continue;
       }
       const effectiveAllocated = await getEffectiveAllocatedAmount(session.id, clientId);

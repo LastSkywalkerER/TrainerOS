@@ -38,11 +38,16 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     const existingTemplate = await scheduleService.getTemplateByClient(clientId);
     if (existingTemplate) {
       setTemplate(existingTemplate);
-      setRules(existingTemplate.rules);
+      // Ensure weekday is a number when loading from database
+      const normalizedRules = existingTemplate.rules.map((rule) => ({
+        ...rule,
+        weekday: Number(rule.weekday) as 1 | 2 | 3 | 4 | 5 | 6 | 7,
+      }));
+      setRules(normalizedRules);
       setTemplatePeriod({
         valid_from: existingTemplate.valid_from ? toISODate(existingTemplate.valid_from) : toISODate(new Date()),
         valid_to: existingTemplate.valid_to ? toISODate(existingTemplate.valid_to) : '',
-        noEndDate: !existingTemplate.valid_to,
+        noEndDate: existingTemplate.valid_to === undefined || existingTemplate.valid_to === null,
       });
     } else {
       setTemplate(null);
@@ -150,18 +155,19 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
           valid_from: validFrom,
           valid_to: validTo,
         });
+        // Regenerate sessions after updating (updateTemplate already regenerates, but we need to ensure it happens)
+        // Actually, updateTemplate already calls generateSessions if rules/valid_from/valid_to changed
+        // So we don't need to call regenerateSessions again here
       } else {
         // For create, remove rule_id as CreateTemplateDto expects rules without rule_id
         const rulesForCreate = rules.map(({ rule_id, ...rule }) => rule);
+        // createTemplate already calls generateSessions internally
         await scheduleService.createTemplate(clientId, { 
           rules: rulesForCreate,
           valid_from: validFrom,
           valid_to: validTo,
         });
       }
-      
-      // Regenerate sessions after saving
-      await scheduleService.regenerateSessions(clientId);
       
       // Reload template to show updated data
       await loadTemplate();

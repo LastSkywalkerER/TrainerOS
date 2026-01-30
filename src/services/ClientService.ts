@@ -56,6 +56,7 @@ export class ClientService {
       status: 'active',
       pause_from: undefined,
       pause_to: undefined,
+      archive_date: undefined, // Clear archive_date when resuming
     });
   }
 

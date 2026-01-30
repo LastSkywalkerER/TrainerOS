@@ -3,7 +3,8 @@ import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
 import { clientService } from '../services/ClientService';
 import { Client } from '../db/types';
-import { formatTime, toISODate } from '../utils/dateUtils';
+import { formatTime, toISODate, isDateInRange } from '../utils/dateUtils';
+import { parseISO } from 'date-fns';
 import { SessionForm } from '../components/SessionForm';
 import { SessionDetails } from '../components/SessionDetails';
 import { calculateSessionStatusWithBalance, PaymentStatus } from '../utils/calculations';
@@ -43,8 +44,11 @@ export function CalendarScreen() {
     let dateTo: Date;
 
     if (view === 'month') {
-      dateFrom = startOfMonth(currentDate);
-      dateTo = endOfMonth(currentDate);
+      // Load data for the full calendar view (including days from previous/next month)
+      const monthStart = startOfMonth(currentDate);
+      const monthEnd = endOfMonth(currentDate);
+      dateFrom = startOfWeek(monthStart, { weekStartsOn: 1 });
+      dateTo = endOfWeek(monthEnd, { weekStartsOn: 1 });
     } else if (view === 'week') {
       dateFrom = startOfWeek(currentDate, { weekStartsOn: 1 });
       dateTo = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -54,9 +58,10 @@ export function CalendarScreen() {
       dateTo = endOfDay(currentDate);
     }
 
+    // Load all clients (active, paused, archived) to show names for all sessions
     const [allSessions, allClients] = await Promise.all([
       calendarSessionService.getByDateRange(dateFrom, dateTo),
-      clientService.getAll({ status: 'active' }),
+      clientService.getAll(),
     ]);
     setSessions(allSessions);
     setClients(allClients);
@@ -74,16 +79,33 @@ export function CalendarScreen() {
     setSessionStatuses(statusMap);
   }
 
+  // Calculate calendar view: start from Monday of the week containing month start,
+  // end on Sunday of the week containing month end
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 }); // Monday
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 }); // Sunday
+  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
   function getSessionsForDate(date: Date): CalendarSession[] {
     const dateStr = toISODate(date);
     return sessions.filter((s) => s.date === dateStr && s.status !== 'canceled');
   }
 
-  function getSessionColorClasses(status: PaymentStatus | undefined): string {
+  function isSessionInPause(session: CalendarSession): boolean {
+    const client = clients.find((c) => c.id === session.client_id);
+    if (!client || !client.pause_from || !client.pause_to) {
+      return false;
+    }
+    const sessionDate = parseISO(session.date);
+    return isDateInRange(sessionDate, client.pause_from, client.pause_to);
+  }
+
+  function getSessionColorClasses(status: PaymentStatus | undefined, isPaused: boolean): string {
+    // Sessions in pause period are always gray
+    if (isPaused) {
+      return 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 opacity-60';
+    }
     if (!status) {
       return 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
     }
@@ -183,21 +205,29 @@ export function CalendarScreen() {
             {days.map((day) => {
               const daySessions = getSessionsForDate(day);
               const isToday = toISODate(day) === toISODate(new Date());
+              const isCurrentMonth = day.getMonth() === currentDate.getMonth();
               return (
                 <div
                   key={day.toISOString()}
                   className={`min-h-24 p-2 border border-gray-200 dark:border-gray-700 ${
                     isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
+                  } ${!isCurrentMonth ? 'bg-gray-50 dark:bg-gray-900/50 opacity-50' : ''}`}
                 >
-                  <div className={`text-sm mb-1 ${isToday ? 'font-bold text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                  <div className={`text-sm mb-1 ${
+                    isToday 
+                      ? 'font-bold text-blue-600 dark:text-blue-400' 
+                      : isCurrentMonth 
+                        ? 'text-gray-600 dark:text-gray-400' 
+                        : 'text-gray-400 dark:text-gray-600'
+                  }`}>
                     {day.getDate()}
                   </div>
                   <div className="space-y-1">
                     {daySessions.slice(0, 3).map((session) => {
                       const client = clients.find((c) => c.id === session.client_id);
                       const paymentStatus = sessionStatuses.get(session.id);
-                      const colorClasses = getSessionColorClasses(paymentStatus);
+                      const isPaused = isSessionInPause(session);
+                      const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
                       return (
                         <div
                           key={session.id}
@@ -272,7 +302,8 @@ export function CalendarScreen() {
                     {daySessions.map((session) => {
                       const client = clients.find((c) => c.id === session.client_id);
                       const paymentStatus = sessionStatuses.get(session.id);
-                      const colorClasses = getSessionColorClasses(paymentStatus);
+                      const isPaused = isSessionInPause(session);
+                      const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
                       return (
                         <div
                           key={session.id}
@@ -346,7 +377,8 @@ export function CalendarScreen() {
                             {hourSessions.map((session) => {
                               const client = clients.find((c) => c.id === session.client_id);
                               const paymentStatus = sessionStatuses.get(session.id);
-                              const colorClasses = getSessionColorClasses(paymentStatus);
+                              const isPaused = isSessionInPause(session);
+                              const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
                               const [hours, minutes] = session.start_time.split(':').map(Number);
                               const endMinutes = minutes + session.duration_minutes;
                               const endHours = hours + Math.floor(endMinutes / 60);

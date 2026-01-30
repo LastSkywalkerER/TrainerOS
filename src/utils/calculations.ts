@@ -1,5 +1,7 @@
 import { db } from '../db/database';
+import { CalendarSession } from '../db/types';
 import { parseISO } from 'date-fns';
+import { isDateInRange } from './dateUtils';
 
 export type PaymentStatus = 'paid' | 'partially_paid' | 'unpaid';
 
@@ -113,16 +115,31 @@ export async function getEffectiveAllocatedAmount(
     .toArray();
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
+  // Get client to check pause period
+  const client = await db.clients.get(clientId);
+  if (!client) {
+    return allocated;
+  }
+
+  // Helper function to check if session is in pause period
+  const isSessionInPause = (s: CalendarSession): boolean => {
+    if (!client.pause_from || !client.pause_to) {
+      return false;
+    }
+    const sDate = parseISO(s.date);
+    return isDateInRange(sDate, client.pause_from, client.pause_to);
+  };
+
   // Get all sessions for client, then filter and sort in JavaScript
   // Dexie doesn't support sortBy after and()
   const allSessions = (await db.calendarSessions
     .where('client_id')
     .equals(clientId)
     .toArray())
-    .filter((s) => s.status !== 'canceled')
+    .filter((s) => s.status !== 'canceled' && !isSessionInPause(s))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Calculate total allocated across all sessions
+  // Calculate total allocated across all sessions (excluding pause period sessions)
   const allAllocations = await db.paymentAllocations.toArray();
   const clientSessionIds = allSessions.map((s) => s.id);
   const totalAllocated = allAllocations
@@ -133,6 +150,11 @@ export async function getEffectiveAllocatedAmount(
 
   // If no unallocated balance, return actual allocated
   if (unallocatedBalance <= 0) {
+    return allocated;
+  }
+
+  // If current session is in pause period, don't apply balance to it
+  if (isSessionInPause(session)) {
     return allocated;
   }
 

@@ -19,15 +19,15 @@ export class ScheduleService {
     const rules: ScheduleRule[] = template.rules.map((rule) => ({
       ...rule,
       rule_id: generateId(),
+      // Ensure weekday is a number, not a string
+      weekday: Number(rule.weekday) as 1 | 2 | 3 | 4 | 5 | 6 | 7,
     }));
 
     // Set valid_from to today if not provided
     const validFrom = template.valid_from || now;
-    // Set valid_to to end of next month if not provided (auto-extend)
-    let validTo = template.valid_to;
-    if (!validTo) {
-      validTo = getEndOfNextMonth(now);
-    }
+    // Keep valid_to as undefined if not provided - this means "no end date" (auto-extend)
+    // Don't auto-set it here, let generateSessions handle auto-extend logic
+    const validTo = template.valid_to;
 
     const scheduleTemplate: ScheduleTemplate = {
       id: generateId(),
@@ -69,15 +69,13 @@ export class ScheduleService {
       updated.rules = updates.rules.map((rule) => ({
         ...rule,
         rule_id: rule.rule_id || generateId(),
+        // Ensure weekday is a number, not a string
+        weekday: Number(rule.weekday) as 1 | 2 | 3 | 4 | 5 | 6 | 7,
       }));
     }
 
-    // Handle valid_to auto-extend logic only if valid_to is explicitly set to undefined/null
-    // If user provides a date (even if earlier), respect it
-    if (updates.valid_to === undefined && !updated.valid_to) {
-      // Only auto-set if valid_to was not provided and is not set
-      updated.valid_to = getEndOfNextMonth(new Date());
-    }
+    // Don't auto-set valid_to here - if valid_to is undefined, it means "no end date" (auto-extend)
+    // The generateSessions() method will handle auto-extend logic
 
     await db.scheduleTemplates.update(id, updated);
 
@@ -111,6 +109,8 @@ export class ScheduleService {
     // Regenerate sessions if template changed
     // This will respect the new valid_to and not create sessions after it
     if (updates.rules || updates.generation_horizon_days || updates.valid_from || updates.valid_to) {
+      // Cancel old template-generated sessions before regenerating
+      await this.cancelTemplateSessions(template.client_id, id);
       await this.generateSessions(id);
     }
 
@@ -131,8 +131,9 @@ export class ScheduleService {
       return [];
     }
 
-    // Check if client is archived - don't generate sessions after archive_date
-    if (client.archive_date) {
+    // Check if client is archived - only check archive_date if client status is 'archived'
+    // If client was unarchived, archive_date should be cleared, but check status first
+    if (client.status === 'archived' && client.archive_date) {
       const archiveDate = startOfDay(client.archive_date);
       const today = startOfDay(new Date());
       if (today >= archiveDate) {
@@ -144,16 +145,17 @@ export class ScheduleService {
     // Only auto-extend if valid_to is not set (undefined/null) - meaning user wants auto-extend
     // If valid_to is explicitly set by user, respect their choice even if it's in the past
     // We check if valid_to is undefined/null, not just if it's falsy
+    // IMPORTANT: Don't save valid_to to DB if it was undefined - keep it undefined to preserve "no end date" checkbox state
+    let effectiveValidTo = template.valid_to;
     if (template.valid_to === undefined || template.valid_to === null) {
-      // Auto-extend valid_to to end of next month only if it was not explicitly set
+      // Use temporary valid_to for generation only (end of next month), but don't save to DB
+      effectiveValidTo = getEndOfNextMonth(new Date());
+    } else if (shouldAutoExtendSchedule(template.valid_to)) {
+      // If valid_to is set but approaching expiration (less than a month remaining), auto-extend
+      // This handles automatic monthly extension for schedules without end date
       const newValidTo = getEndOfNextMonth(new Date());
       await db.scheduleTemplates.update(templateId, { valid_to: newValidTo });
-      template.valid_to = newValidTo;
-    } else if (shouldAutoExtendSchedule(template.valid_to)) {
-      // If valid_to is set but approaching expiration, auto-extend (only for auto-extended schedules)
-      // But we need to be careful - if user just set a date, don't override it
-      // This should only happen for schedules that were previously auto-extended
-      // For now, we'll skip this to avoid overriding user's explicit choice
+      effectiveValidTo = newValidTo;
     }
 
     // Check schedule validity period
@@ -163,6 +165,8 @@ export class ScheduleService {
       return [];
     }
 
+    // Check expiration only if valid_to was originally set (not auto-generated)
+    // If valid_to was undefined, schedule never expires (auto-extend)
     if (template.valid_to && isAfter(today, startOfDay(template.valid_to))) {
       // Schedule has expired
       return [];
@@ -174,7 +178,10 @@ export class ScheduleService {
     }
 
     const horizon = horizonDays || template.generation_horizon_days;
-    const dates = getDatesInRange(today, horizon);
+    // Start generation from valid_from if specified, otherwise from today
+    // This allows retroactive schedule generation (generating sessions from past dates)
+    const startDate = template.valid_from || today;
+    const dates = getDatesInRange(startDate, horizon);
     const generatedSessions: CalendarSession[] = [];
 
     for (const rule of template.rules) {
@@ -192,8 +199,8 @@ export class ScheduleService {
             continue;
           }
         }
-        if (template.valid_to) {
-          const validToStr = toISODate(template.valid_to);
+        if (effectiveValidTo) {
+          const validToStr = toISODate(effectiveValidTo);
           // Skip dates after valid_to (dates > valid_to)
           if (dateStr > validToStr) {
             continue;
@@ -207,8 +214,8 @@ export class ScheduleService {
           }
         }
 
-        // Check if date is on or after archive_date
-        if (client.archive_date) {
+        // Check if date is on or after archive_date (only if client is actually archived)
+        if (client.status === 'archived' && client.archive_date) {
           const archiveDateStr = toISODate(client.archive_date);
           const dateStr = toISODate(date);
           if (dateStr >= archiveDateStr) {
@@ -217,7 +224,8 @@ export class ScheduleService {
         }
 
         const weekday = getWeekday(date);
-        if (weekday !== rule.weekday) {
+        // Ensure both values are numbers for comparison (in case weekday was stored as string)
+        if (Number(weekday) !== Number(rule.weekday)) {
           continue;
         }
 
@@ -259,7 +267,32 @@ export class ScheduleService {
   async regenerateSessions(clientId: string): Promise<void> {
     const template = await this.getTemplateByClient(clientId);
     if (template) {
+      // Cancel all existing template-generated sessions before regenerating
+      // This ensures old sessions are removed when schedule is updated
+      await this.cancelTemplateSessions(clientId, template.id);
       await this.generateSessions(template.id);
+    }
+  }
+
+  async cancelTemplateSessions(clientId: string, templateId: string): Promise<void> {
+    // Get all template-generated sessions for this client that are not custom
+    // Cancel all non-custom sessions to ensure clean regeneration
+    // This handles cases where rules were changed or removed
+    const allSessions = await db.calendarSessions
+      .where('client_id')
+      .equals(clientId)
+      .toArray();
+    
+    // Cancel all template-generated (non-custom) sessions that are not already canceled
+    const sessionsToCancel = allSessions.filter((s) => 
+      !s.is_custom && 
+      s.status !== 'canceled'
+    );
+    
+    if (sessionsToCancel.length > 0) {
+      for (const session of sessionsToCancel) {
+        await calendarSessionService.cancel(session.id);
+      }
     }
   }
 

@@ -5,14 +5,23 @@ import { toISODate } from '../utils/dateUtils';
 interface PaymentFormProps {
   clients: Client[];
   payment?: any;
+  defaultClientId?: string; // Pre-select this client if provided
   onSave: (data: CreatePaymentDto & { client_id: string; autoAllocate: boolean }) => void;
   onCancel: () => void;
 }
 
-export function PaymentForm({ clients, payment, onSave, onCancel }: PaymentFormProps) {
+export function PaymentForm({ clients, payment, defaultClientId, onSave, onCancel }: PaymentFormProps) {
   const now = new Date();
+  // Determine default client_id: payment client_id > defaultClientId > first client > empty
+  const getDefaultClientId = () => {
+    if (payment?.client_id) return payment.client_id;
+    if (defaultClientId) return defaultClientId;
+    if (clients.length === 1) return clients[0].id;
+    return '';
+  };
+  
   const [formData, setFormData] = useState({
-    client_id: payment?.client_id || '',
+    client_id: getDefaultClientId(),
     paid_at: payment ? toISODate(payment.paid_at) : toISODate(now),
     paid_time: payment ? payment.paid_at.toTimeString().slice(0, 5) : now.toTimeString().slice(0, 5),
     amount: payment?.amount || 0,

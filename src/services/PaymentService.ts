@@ -119,6 +119,10 @@ export class PaymentService {
         remainingAmount -= toAllocate;
       }
     }
+
+    // Recalculate client to update balance and debt
+    const { recalculateService } = await import('./RecalculationService');
+    await recalculateService.recalculateClient(payment.client_id);
   }
 }
 

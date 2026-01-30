@@ -164,6 +164,9 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                     <button
                       onClick={async () => {
                         await clientService.resume(currentClient.id);
+                        // Regenerate schedule after resuming from pause
+                        const { scheduleService } = await import('../services/ScheduleService');
+                        await scheduleService.regenerateSessions(currentClient.id);
                         const updated = await clientService.getById(currentClient.id);
                         if (updated) {
                           setCurrentClient(updated);
@@ -186,6 +189,9 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                   <button
                     onClick={async () => {
                       await clientService.resume(currentClient.id);
+                      // Regenerate schedule after unarchiving
+                      const { scheduleService } = await import('../services/ScheduleService');
+                      await scheduleService.regenerateSessions(currentClient.id);
                       const updated = await clientService.getById(currentClient.id);
                       if (updated) {
                         setCurrentClient(updated);
@@ -261,6 +267,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
             {showPaymentForm && (
               <PaymentForm
                 clients={[currentClient]}
+                defaultClientId={currentClient.id}
                 onSave={async (data) => {
                   const payment = await paymentService.create(currentClient.id, {
                     paid_at: data.paid_at,
