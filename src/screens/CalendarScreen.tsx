@@ -393,7 +393,11 @@ export function CalendarScreen() {
               return (
                 <div
                   key={day.toISOString()}
-                  className={`min-h-24 p-2 border border-gray-200 dark:border-gray-700 ${
+                  onClick={() => {
+                    setView('day');
+                    setCurrentDate(day);
+                  }}
+                  className={`min-h-24 p-2 border border-gray-200 dark:border-gray-700 cursor-pointer ${
                     isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                   } ${!isCurrentMonth ? 'bg-gray-50 dark:bg-gray-900/50 opacity-50' : ''}`}
                 >
@@ -419,8 +423,7 @@ export function CalendarScreen() {
                           key={session.id}
                           id={isFirstSession ? 'tutorial-sessions' : undefined}
                           data-tutorial-id={isFirstSession ? 'tutorial-sessions' : undefined}
-                          onClick={() => handleSessionSelect(session)}
-                          className={`text-xs p-1 rounded ${colorClasses} cursor-pointer hover:opacity-80 truncate flex items-center gap-1`}
+                          className={`text-xs p-1 rounded ${colorClasses} hover:opacity-80 truncate flex items-center gap-1`}
                         >
                           {hasNotes(session) && (
                             <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -506,22 +509,32 @@ export function CalendarScreen() {
                         <div
                           key={session.id}
                           onClick={() => handleSessionSelect(session)}
-                          className={`p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80`}
+                          className={`p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80 overflow-hidden`}
                         >
-                          <div className="text-xs font-semibold flex items-center gap-1">
-                            {hasNotes(session) && (
-                              <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                            )}
-                            {isCustomEdited(session) && (
-                              <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            )}
+                          {/* Icons row */}
+                          {(hasNotes(session) || isCustomEdited(session)) && (
+                            <div className="flex items-center gap-1 mb-1">
+                              {hasNotes(session) && (
+                                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              )}
+                              {isCustomEdited(session) && (
+                                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              )}
+                            </div>
+                          )}
+                          {/* Time row */}
+                          <div className="text-xs font-semibold mb-1">
                             {formatTime(session.start_time)}
                           </div>
-                          <div className="text-xs">{client?.full_name}</div>
+                          {/* Client name row - truncate if too long */}
+                          <div className="text-xs truncate overflow-hidden whitespace-nowrap" title={client?.full_name}>
+                            {client?.full_name || 'Неизвестный клиент'}
+                          </div>
+                          {/* Duration row */}
                           <div className="text-xs opacity-75">
                             {session.duration_minutes} мин
                           </div>
