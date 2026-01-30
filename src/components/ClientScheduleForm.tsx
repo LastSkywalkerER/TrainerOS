@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
-import { ScheduleTemplate, ScheduleRule } from '../db/types';
+import { ScheduleTemplate, ScheduleRule, CalendarSession, Client } from '../db/types';
 import { scheduleService } from '../services/ScheduleService';
+import { calendarSessionService } from '../services/CalendarSessionService';
+import { clientService } from '../services/ClientService';
 import { generateId } from '../utils/uuid';
-import { toISODate, formatDate } from '../utils/dateUtils';
+import { toISODate, formatDate, getWeekday } from '../utils/dateUtils';
 import { getEndOfNextMonth } from '../utils/dateUtils';
+import { addDays } from 'date-fns';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface ClientScheduleFormProps {
@@ -19,6 +22,8 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  const [conflicts, setConflicts] = useState<CalendarSession[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [formData, setFormData] = useState({
     weekday: 1 as 1 | 2 | 3 | 4 | 5 | 6 | 7,
     start_time: '09:00',
@@ -34,7 +39,14 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
 
   useEffect(() => {
     loadTemplate();
+    loadClients();
   }, [clientId]);
+
+  useEffect(() => {
+    if (showAddForm) {
+      checkConflicts();
+    }
+  }, [formData.weekday, formData.start_time, showAddForm]);
 
   async function loadTemplate() {
     const existingTemplate = await scheduleService.getTemplateByClient(clientId);
@@ -60,6 +72,60 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
         noEndDate: true,
       });
     }
+  }
+
+  async function loadClients() {
+    const allClients = await clientService.getAll();
+    setClients(allClients);
+  }
+
+  async function checkConflicts() {
+    if (!formData.weekday || !formData.start_time) {
+      setConflicts([]);
+      return;
+    }
+
+    // Check conflicts for the next 8 occurrences of the selected weekday
+    const today = new Date();
+    const conflictsList: CalendarSession[] = [];
+    const checkedDates = new Set<string>();
+
+    // Find the first occurrence of the target weekday
+    const currentWeekday = getWeekday(today);
+    let daysUntilFirst = (formData.weekday - currentWeekday + 7) % 7;
+    if (daysUntilFirst === 0) {
+      daysUntilFirst = 7; // If today is the target weekday, check next week's occurrence
+    }
+    let firstDate = addDays(today, daysUntilFirst);
+
+    // Check the next 8 occurrences
+    for (let i = 0; i < 8; i++) {
+      const date = addDays(firstDate, i * 7);
+      const dateStr = toISODate(date);
+      
+      if (checkedDates.has(dateStr)) continue;
+      checkedDates.add(dateStr);
+
+      const dateConflicts = await calendarSessionService.checkConflicts(
+        dateStr,
+        formData.start_time
+      );
+      
+      // Filter out conflicts for the current client (since this is their schedule)
+      const otherClientConflicts = dateConflicts.filter(
+        (c) => c.client_id !== clientId
+      );
+      
+      conflictsList.push(...otherClientConflicts);
+    }
+
+    // Remove duplicates based on session id
+    const uniqueConflicts = conflictsList.filter(
+      (conflict, index, self) =>
+        index === self.findIndex((c) => c.id === conflict.id)
+    );
+
+    setConflicts(uniqueConflicts);
   }
 
   function handleAddRule() {
@@ -404,6 +470,28 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
                 Активно
               </label>
             </div>
+
+            {/* Conflict Warning */}
+            {conflicts.length > 0 && (
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                <div className="text-sm text-yellow-800 dark:text-yellow-200 font-semibold mb-1">
+                  ⚠️ Конфликт времени
+                </div>
+                <div className="text-sm text-yellow-700 dark:text-yellow-300">
+                  В это время уже запланированы занятия:
+                  <ul className="list-disc list-inside mt-1">
+                    {conflicts.map((conflict) => {
+                      const client = clients.find((c) => c.id === conflict.client_id);
+                      return (
+                        <li key={conflict.id}>
+                          {client?.full_name || 'Неизвестно'} ({conflict.start_time})
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2 pt-2">
               <button
