@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
 import { clientService } from '../services/ClientService';
@@ -27,14 +28,88 @@ import {
 import { ru } from 'date-fns/locale';
 
 export function CalendarScreen() {
-  const [view, setView] = useState<'month' | 'week' | 'day'>('month');
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Initialize state from URL params
+  const getViewFromUrl = (): 'month' | 'week' | 'day' => {
+    const viewParam = searchParams.get('view');
+    if (viewParam === 'month' || viewParam === 'week' || viewParam === 'day') {
+      return viewParam;
+    }
+    return 'month';
+  };
+
+  const getDateFromUrl = (): Date => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      const parsed = parseISO(dateParam);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return new Date();
+  };
+
+  const [view, setView] = useState<'month' | 'week' | 'day'>(getViewFromUrl());
+  const [currentDate, setCurrentDate] = useState<Date>(getDateFromUrl());
   const [sessions, setSessions] = useState<CalendarSession[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [sessionStatuses, setSessionStatuses] = useState<Map<string, PaymentStatus>>(new Map());
   const [selectedSession, setSelectedSession] = useState<CalendarSession | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingSession, setEditingSession] = useState<CalendarSession | null>(null);
+
+  // Initialize from URL on mount
+  useEffect(() => {
+    const viewParam = searchParams.get('view');
+    const dateParam = searchParams.get('date');
+    const sessionId = searchParams.get('session');
+
+    if (viewParam === 'month' || viewParam === 'week' || viewParam === 'day') {
+      setView(viewParam);
+    }
+    
+    if (dateParam) {
+      const parsed = parseISO(dateParam);
+      if (!isNaN(parsed.getTime())) {
+        setCurrentDate(parsed);
+      }
+    }
+
+    if (sessionId) {
+      calendarSessionService.getById(sessionId).then((session) => {
+        if (session) {
+          setSelectedSession(session);
+        }
+      });
+    }
+  }, []); // Only run on mount
+
+  // Sync URL params when view or date changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('view', view);
+    params.set('date', toISODate(currentDate));
+    // Preserve session param if it exists
+    const sessionId = searchParams.get('session');
+    if (sessionId) {
+      params.set('session', sessionId);
+    }
+    setSearchParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, currentDate]);
+
+  // Update URL when session is selected
+  const handleSessionSelect = (session: CalendarSession | null) => {
+    setSelectedSession(session);
+    const params = new URLSearchParams(searchParams);
+    if (session) {
+      params.set('session', session.id);
+    } else {
+      params.delete('session');
+    }
+    setSearchParams(params, { replace: true });
+  };
 
   useEffect(() => {
     loadData();
@@ -136,13 +211,15 @@ export function CalendarScreen() {
         <div className="flex gap-2">
           <button
             onClick={() => {
+              let newDate: Date;
               if (view === 'month') {
-                setCurrentDate(subMonths(currentDate, 1));
+                newDate = subMonths(currentDate, 1);
               } else if (view === 'week') {
-                setCurrentDate(subWeeks(currentDate, 1));
+                newDate = subWeeks(currentDate, 1);
               } else {
-                setCurrentDate(subDays(currentDate, 1));
+                newDate = subDays(currentDate, 1);
               }
+              setCurrentDate(newDate);
             }}
             className="p-2 text-gray-600 dark:text-gray-400"
           >
@@ -158,13 +235,15 @@ export function CalendarScreen() {
           </button>
           <button
             onClick={() => {
+              let newDate: Date;
               if (view === 'month') {
-                setCurrentDate(addMonths(currentDate, 1));
+                newDate = addMonths(currentDate, 1);
               } else if (view === 'week') {
-                setCurrentDate(addWeeks(currentDate, 1));
+                newDate = addWeeks(currentDate, 1);
               } else {
-                setCurrentDate(addDays(currentDate, 1));
+                newDate = addDays(currentDate, 1);
               }
+              setCurrentDate(newDate);
             }}
             className="p-2 text-gray-600 dark:text-gray-400"
           >
@@ -180,7 +259,9 @@ export function CalendarScreen() {
         {(['month', 'week', 'day'] as const).map((v) => (
           <button
             key={v}
-            onClick={() => setView(v)}
+            onClick={() => {
+              setView(v);
+            }}
             className={`px-4 py-2 rounded ${
               view === v
                 ? 'bg-blue-600 text-white'
@@ -232,7 +313,7 @@ export function CalendarScreen() {
                       return (
                         <div
                           key={session.id}
-                          onClick={() => setSelectedSession(session)}
+                          onClick={() => handleSessionSelect(session)}
                           className={`text-xs p-1 rounded ${colorClasses} cursor-pointer hover:opacity-80 truncate`}
                         >
                           {formatTime(session.start_time)} {client?.full_name}
@@ -308,7 +389,7 @@ export function CalendarScreen() {
                       return (
                         <div
                           key={session.id}
-                          onClick={() => setSelectedSession(session)}
+                          onClick={() => handleSessionSelect(session)}
                           className={`p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80`}
                         >
                           <div className="text-xs font-semibold">{formatTime(session.start_time)}</div>
@@ -389,7 +470,7 @@ export function CalendarScreen() {
                               return (
                                 <div
                                   key={session.id}
-                                  onClick={() => setSelectedSession(session)}
+                                  onClick={() => handleSessionSelect(session)}
                                   className={`mb-2 p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80`}
                                 >
                                   <div className="text-sm font-semibold">
@@ -456,20 +537,26 @@ export function CalendarScreen() {
         <SessionDetails
           session={selectedSession}
           client={clients.find((c) => c.id === selectedSession.client_id)}
-          onClose={() => setSelectedSession(null)}
+          onClose={() => handleSessionSelect(null)}
           onEdit={() => {
             setEditingSession(selectedSession);
-            setSelectedSession(null);
+            handleSessionSelect(null);
             setShowForm(true);
           }}
           onCancel={async () => {
             await calendarSessionService.cancel(selectedSession.id);
-            setSelectedSession(null);
+            handleSessionSelect(null);
             await loadData();
           }}
           onComplete={async () => {
             await calendarSessionService.complete(selectedSession.id);
-            setSelectedSession(null);
+            handleSessionSelect(null);
+            await loadData();
+          }}
+          onNotesSaved={async (updatedSession) => {
+            // Update selected session with new notes
+            setSelectedSession(updatedSession);
+            // Also update in sessions list
             await loadData();
           }}
         />
