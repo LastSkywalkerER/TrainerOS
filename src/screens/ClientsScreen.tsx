@@ -1,39 +1,86 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Client } from '../db/types';
 import { clientService } from '../services/ClientService';
 import { ClientCard } from '../components/ClientCard';
 import { ClientForm } from '../components/ClientForm';
-import { ClientProfile } from '../components/ClientProfile';
+import { TutorialGuide, TutorialStep } from '../components/TutorialGuide';
+import { tutorialService } from '../services/TutorialService';
+import { useTutorial } from '../contexts/TutorialContext';
 
 export function ClientsScreen() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { getTriggeredPage, clearTrigger } = useTutorial();
   const [clients, setClients] = useState<Client[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'archived'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [initialTab, setInitialTab] = useState<'info' | 'schedule' | 'payments' | 'stats' | undefined>(undefined);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const tutorialSteps: TutorialStep[] = [
+    {
+      target: '#tutorial-search',
+      title: 'Поиск клиентов',
+      description: 'Используйте поиск для быстрого нахождения клиентов по имени, телефону или Telegram.',
+      position: 'bottom',
+    },
+    {
+      target: '#tutorial-filters',
+      title: 'Фильтры',
+      description: 'Фильтруйте клиентов по статусу: все, активные, на паузе или архив.',
+      position: 'bottom',
+    },
+    {
+      target: '#tutorial-fab',
+      title: 'Добавление клиента',
+      description: 'Нажмите эту кнопку для добавления нового клиента.',
+      position: 'top',
+    },
+    {
+      target: '#tutorial-nav',
+      title: 'Навигация',
+      description: 'Переключайтесь между разделами приложения: Клиенты, Календарь, Платежи и Итоги.',
+      position: 'top',
+    },
+  ];
 
   useEffect(() => {
     loadClients();
   }, [filter]);
 
+  // Check if tutorial should be shown
+  useEffect(() => {
+    if (editingClient || showForm) {
+      return;
+    }
+
+    const triggeredPage = getTriggeredPage();
+    if (triggeredPage === 'clients') {
+      setShowTutorial(true);
+      clearTrigger();
+      return;
+    }
+
+    // Check if tutorial was completed
+    if (!tutorialService.isCompleted('clients')) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        setShowTutorial(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [editingClient, showForm, getTriggeredPage, clearTrigger]);
+
   // Handle navigation from other screens (e.g., SummaryScreen)
   useEffect(() => {
     const state = location.state as { clientId?: string; openTab?: 'info' | 'schedule' | 'payments' | 'stats' } | null;
-    if (state?.clientId && !selectedClient) {
-      clientService.getById(state.clientId).then((client) => {
-        if (client) {
-          setSelectedClient(client);
-          if (state.openTab) {
-            setInitialTab(state.openTab);
-          }
-        }
-      });
+    if (state?.clientId) {
+      const tabParam = state.openTab ? `?tab=${state.openTab}` : '';
+      navigate(`/clients/${state.clientId}${tabParam}`, { replace: true });
     }
-  }, [location.state, selectedClient]);
+  }, [location.state, navigate]);
 
   async function loadClients() {
     const allClients = await clientService.getAll(
@@ -65,57 +112,32 @@ export function ClientsScreen() {
     await loadClients();
   }
 
-  async function handleUpdate(id: string, updates: Partial<Client>) {
-    await clientService.update(id, updates);
-    const wasEditingFromProfile = selectedClient?.id === id;
-    setEditingClient(null);
-    if (wasEditingFromProfile) {
-      const updated = await clientService.getById(id);
-      setSelectedClient(updated);
-    }
-    await loadClients();
-  }
-
-  // Check editingClient first, so edit form shows even when selectedClient is set
+  // Check editingClient first (for editing from list)
   if (editingClient) {
     return (
       <ClientForm
         client={editingClient}
-        onSave={(data) => handleUpdate(editingClient.id, data)}
+        onSave={async (data) => {
+          await clientService.update(editingClient.id, data);
+          setEditingClient(null);
+          await loadClients();
+        }}
         onCancel={() => {
           setEditingClient(null);
-          // If we were editing from profile, go back to profile
-          if (selectedClient?.id === editingClient.id) {
-            // Keep selectedClient, just clear editingClient
-          } else {
-            setSelectedClient(null);
-          }
         }}
       />
     );
   }
 
-  if (selectedClient) {
-    return (
-      <ClientProfile
-        client={selectedClient}
-        onBack={() => {
-          setSelectedClient(null);
-          setInitialTab(undefined);
-        }}
-        onEdit={() => setEditingClient(selectedClient)}
-        onStatusChange={async () => {
-          // Reload client data after status change
-          const updated = await clientService.getById(selectedClient.id);
-          if (updated) {
-            setSelectedClient(updated);
-          }
-          await loadClients();
-        }}
-        initialTab={initialTab}
-      />
-    );
-  }
+  const handleTutorialComplete = () => {
+    setShowTutorial(false);
+    tutorialService.markCompleted('clients');
+  };
+
+  const handleTutorialSkip = () => {
+    setShowTutorial(false);
+    tutorialService.markCompleted('clients');
+  };
 
   return (
     <div className="p-4">
@@ -123,6 +145,8 @@ export function ClientsScreen() {
 
       {/* Search */}
       <input
+        id="tutorial-search"
+        data-tutorial-id="tutorial-search"
         type="text"
         placeholder="Поиск по имени, телефону..."
         value={searchQuery}
@@ -131,7 +155,7 @@ export function ClientsScreen() {
       />
 
       {/* Filters */}
-      <div className="flex gap-2 mb-4 overflow-x-auto">
+      <div id="tutorial-filters" data-tutorial-id="tutorial-filters" className="flex gap-2 mb-4 overflow-x-auto">
         {(['all', 'active', 'paused', 'archived'] as const).map((f) => (
           <button
             key={f}
@@ -153,8 +177,8 @@ export function ClientsScreen() {
           <ClientCard
             key={client.id}
             client={client}
-            onClick={() => setSelectedClient(client)}
-            onEdit={() => setEditingClient(client)}
+            onClick={() => navigate(`/clients/${client.id}`)}
+            onEdit={() => navigate(`/clients/${client.id}/edit`)}
           />
         ))}
       </div>
@@ -162,6 +186,8 @@ export function ClientsScreen() {
       {/* FAB */}
       {!showForm && (
         <button
+          id="tutorial-fab"
+          data-tutorial-id="tutorial-fab"
           onClick={() => setShowForm(true)}
           className="fixed bottom-24 right-4 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center"
         >
@@ -170,6 +196,14 @@ export function ClientsScreen() {
           </svg>
         </button>
       )}
+
+      {/* Tutorial Guide */}
+      <TutorialGuide
+        steps={tutorialSteps}
+        isActive={showTutorial && !editingClient && !showForm}
+        onComplete={handleTutorialComplete}
+        onSkip={handleTutorialSkip}
+      />
 
       {/* Create Form */}
       {showForm && (

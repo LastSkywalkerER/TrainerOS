@@ -1,10 +1,16 @@
-import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { CalendarScreen } from './screens/CalendarScreen';
 import { PaymentsScreen } from './screens/PaymentsScreen';
 import { SummaryScreen } from './screens/SummaryScreen';
 import { runMigrations } from './db/migrations';
+import { TutorialProvider, useTutorial } from './contexts/TutorialContext';
+import { ClientProfile } from './components/ClientProfile';
+import { ClientForm } from './components/ClientForm';
+import { clientService } from './services/ClientService';
+import { Client } from './db/types';
+import { tutorialService } from './services/TutorialService';
 
 function NavigationBar() {
   const location = useLocation();
@@ -12,7 +18,7 @@ function NavigationBar() {
   const activeTab = location.pathname.split('/')[1] || 'clients';
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+    <nav id="tutorial-nav" data-tutorial-id="tutorial-nav" className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
       <div className="grid grid-cols-4 h-16">
         <button
           onClick={() => navigate('/clients')}
@@ -71,6 +77,115 @@ function NavigationBar() {
   );
 }
 
+function ClientProfileRoute() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [client, setClient] = useState<Client | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Get initialTab from URL params
+  const searchParams = new URLSearchParams(location.search);
+  const initialTab = (searchParams.get('tab') as 'info' | 'schedule' | 'payments' | 'stats' | null) || undefined;
+
+  useEffect(() => {
+    if (id) {
+      clientService.getById(id).then((clientData) => {
+        setClient(clientData);
+        setLoading(false);
+      });
+    }
+  }, [id]);
+
+  if (loading) {
+    return <div className="p-4">Загрузка...</div>;
+  }
+
+  if (!client) {
+    return <Navigate to="/clients" replace />;
+  }
+
+  return (
+    <ClientProfile
+      client={client}
+      onBack={() => navigate('/clients')}
+      onEdit={() => navigate(`/clients/${id}/edit`)}
+      onStatusChange={async () => {
+        const updated = await clientService.getById(id!);
+        if (updated) {
+          setClient(updated);
+        }
+      }}
+      initialTab={initialTab}
+      showTutorialOnMount={!tutorialService.isCompleted('client-profile' as any)}
+    />
+  );
+}
+
+function ClientEditRoute() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [client, setClient] = useState<Client | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (id) {
+      clientService.getById(id).then((clientData) => {
+        setClient(clientData);
+        setLoading(false);
+      });
+    }
+  }, [id]);
+
+  if (loading) {
+    return <div className="p-4">Загрузка...</div>;
+  }
+
+  if (!client) {
+    return <Navigate to="/clients" replace />;
+  }
+
+  return (
+    <ClientForm
+      client={client}
+      onSave={async (data) => {
+        await clientService.update(client.id, data);
+        navigate(`/clients/${client.id}`);
+      }}
+      onCancel={() => navigate(`/clients/${client.id}`)}
+    />
+  );
+}
+
+function HelpButton() {
+  const location = useLocation();
+  const { triggerTutorial } = useTutorial();
+
+  const handleClick = () => {
+    const pathParts = location.pathname.split('/').filter(Boolean);
+    let page = pathParts[0] || 'clients';
+    
+    // If we're on /clients/:id, treat it as client-profile
+    if (pathParts[0] === 'clients' && pathParts[1] && pathParts[1] !== 'edit') {
+      page = 'client-profile';
+    }
+    
+    triggerTutorial(page);
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className="fixed bottom-24 left-4 w-10 h-10 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors z-40"
+      title="Показать подсказки"
+    >
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </button>
+  );
+}
+
 function AppContent() {
   useEffect(() => {
     runMigrations();
@@ -83,6 +198,8 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<Navigate to="/clients" replace />} />
           <Route path="/clients" element={<ClientsScreen />} />
+          <Route path="/clients/:id" element={<ClientProfileRoute />} />
+          <Route path="/clients/:id/edit" element={<ClientEditRoute />} />
           <Route path="/calendar" element={<CalendarScreen />} />
           <Route path="/payments" element={<PaymentsScreen />} />
           <Route path="/summary" element={<SummaryScreen />} />
@@ -90,6 +207,7 @@ function AppContent() {
       </main>
 
       <NavigationBar />
+      <HelpButton />
     </div>
   );
 }
@@ -97,7 +215,9 @@ function AppContent() {
 function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <TutorialProvider>
+        <AppContent />
+      </TutorialProvider>
     </BrowserRouter>
   );
 }

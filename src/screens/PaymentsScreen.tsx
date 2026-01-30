@@ -5,17 +5,66 @@ import { clientService } from '../services/ClientService';
 import { formatDate } from '../utils/dateUtils';
 import { PaymentForm } from '../components/PaymentForm';
 import { PaymentDetails } from '../components/PaymentDetails';
+import { TutorialGuide, TutorialStep } from '../components/TutorialGuide';
+import { tutorialService } from '../services/TutorialService';
+import { useTutorial } from '../contexts/TutorialContext';
 
 export function PaymentsScreen() {
+  const { getTriggeredPage, clearTrigger } = useTutorial();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [filterClientId, setFilterClientId] = useState<string>('');
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const tutorialSteps: TutorialStep[] = [
+    {
+      target: '#tutorial-filter',
+      title: 'Фильтр по клиентам',
+      description: 'Фильтруйте платежи по конкретному клиенту или просматривайте все платежи.',
+      position: 'bottom',
+    },
+    {
+      target: '#tutorial-fab',
+      title: 'Добавление платежа',
+      description: 'Зарегистрируйте новый платёж от клиента.',
+      position: 'top',
+    },
+    {
+      target: '#tutorial-nav',
+      title: 'Навигация',
+      description: 'Переключайтесь между разделами приложения: Клиенты, Календарь, Платежи и Итоги.',
+      position: 'top',
+    },
+  ];
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Check if tutorial should be shown
+  useEffect(() => {
+    if (selectedPayment || showForm) {
+      return;
+    }
+
+    const triggeredPage = getTriggeredPage();
+    if (triggeredPage === 'payments') {
+      setShowTutorial(true);
+      clearTrigger();
+      return;
+    }
+
+    // Check if tutorial was completed
+    if (!tutorialService.isCompleted('payments')) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        setShowTutorial(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedPayment, showForm, getTriggeredPage, clearTrigger]);
 
   async function loadData() {
     const [allPayments, allClients] = await Promise.all([
@@ -56,6 +105,8 @@ export function PaymentsScreen() {
 
       {/* Filter */}
       <select
+        id="tutorial-filter"
+        data-tutorial-id="tutorial-filter"
         value={filterClientId}
         onChange={(e) => setFilterClientId(e.target.value)}
         className="w-full mb-4 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
@@ -103,6 +154,8 @@ export function PaymentsScreen() {
       {/* FAB */}
       {!showForm && (
         <button
+          id="tutorial-fab"
+          data-tutorial-id="tutorial-fab"
           onClick={() => setShowForm(true)}
           className="fixed bottom-24 right-4 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center"
         >
@@ -111,6 +164,20 @@ export function PaymentsScreen() {
           </svg>
         </button>
       )}
+
+      {/* Tutorial Guide */}
+      <TutorialGuide
+        steps={tutorialSteps}
+        isActive={showTutorial && !selectedPayment && !showForm}
+        onComplete={() => {
+          setShowTutorial(false);
+          tutorialService.markCompleted('payments');
+        }}
+        onSkip={() => {
+          setShowTutorial(false);
+          tutorialService.markCompleted('payments');
+        }}
+      />
 
       {/* Payment Form */}
       {showForm && (

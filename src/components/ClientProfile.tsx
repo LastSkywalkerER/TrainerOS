@@ -12,6 +12,9 @@ import { clientService } from '../services/ClientService';
 import { scheduleService } from '../services/ScheduleService';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { TutorialGuide, TutorialStep } from './TutorialGuide';
+import { tutorialService } from '../services/TutorialService';
+import { useTutorial } from '../contexts/TutorialContext';
 
 interface ClientProfileProps {
   client: Client;
@@ -19,11 +22,13 @@ interface ClientProfileProps {
   onEdit: () => void;
   onStatusChange?: () => void;
   initialTab?: Tab;
+  showTutorialOnMount?: boolean;
 }
 
 type Tab = 'info' | 'schedule' | 'payments' | 'stats';
 
-export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialTab = 'info' }: ClientProfileProps) {
+export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialTab = 'info', showTutorialOnMount = false }: ClientProfileProps) {
+  const { getTriggeredPage, clearTrigger, triggerTutorial } = useTutorial();
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<ClientMonthlyStats[]>([]);
@@ -32,6 +37,16 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
   const [showPauseDialog, setShowPauseDialog] = useState(false);
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [currentClient, setCurrentClient] = useState<Client>(client);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const tutorialSteps: TutorialStep[] = [
+    {
+      target: '#tutorial-tabs',
+      title: 'Вкладки профиля клиента',
+      description: 'Переключайтесь между вкладками: Информация - контакты и статус клиента, Расписание - настройка регулярных занятий, Платежи - история платежей, Расчёты - статистика и баланс.',
+      position: 'bottom',
+    },
+  ];
 
   useEffect(() => {
     setCurrentClient(client);
@@ -53,6 +68,38 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     }
   }, [currentClient.id, activeTab]);
 
+  // Check if tutorial should be shown
+  useEffect(() => {
+    if (showPaymentForm || showPauseDialog || showArchiveDialog) {
+      return;
+    }
+
+    const triggeredPage = getTriggeredPage();
+    if (triggeredPage === 'client-profile') {
+      setShowTutorial(true);
+      clearTrigger();
+      return;
+    }
+
+    // Check if tutorial should be shown on mount or if it wasn't completed
+    if (showTutorialOnMount || !tutorialService.isCompleted('client-profile' as any)) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        setShowTutorial(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [showPaymentForm, showPauseDialog, showArchiveDialog, getTriggeredPage, clearTrigger, showTutorialOnMount]);
+
+  // Handle manual tutorial trigger from help button
+  useEffect(() => {
+    const triggeredPage = getTriggeredPage();
+    if (triggeredPage === 'client-profile') {
+      setShowTutorial(true);
+      clearTrigger();
+    }
+  }, [getTriggeredPage, clearTrigger]);
+
   async function loadStats() {
     const clientStats = await analyticsService.getClientStats(currentClient.id);
     setStats(clientStats);
@@ -68,8 +115,24 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     setPayments(clientPayments);
   }
 
+  const handleHelpClick = () => {
+    setShowTutorial(true);
+    // Don't mark as completed when triggered manually
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Help Button */}
+      <button
+        onClick={handleHelpClick}
+        className="fixed bottom-24 left-4 w-10 h-10 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors z-40"
+        title="Показать подсказки"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
+
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
         <div className="flex items-center p-4">
@@ -89,7 +152,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
+        <div id="tutorial-tabs" data-tutorial-id="tutorial-tabs" className="flex border-b border-gray-200 dark:border-gray-700">
           {(['info', 'schedule', 'payments', 'stats'] as Tab[]).map((tab) => (
             <button
               key={tab}
@@ -437,6 +500,20 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
           initialArchiveDate={currentClient.archive_date}
         />
       )}
+
+      {/* Tutorial Guide */}
+      <TutorialGuide
+        steps={tutorialSteps}
+        isActive={showTutorial && !showPaymentForm && !showPauseDialog && !showArchiveDialog}
+        onComplete={() => {
+          setShowTutorial(false);
+          tutorialService.markCompleted('client-profile' as any);
+        }}
+        onSkip={() => {
+          setShowTutorial(false);
+          tutorialService.markCompleted('client-profile' as any);
+        }}
+      />
     </div>
   );
 }

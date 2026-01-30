@@ -9,6 +9,9 @@ import { parseISO } from 'date-fns';
 import { SessionForm } from '../components/SessionForm';
 import { SessionDetails } from '../components/SessionDetails';
 import { calculateSessionStatusWithBalance, PaymentStatus } from '../utils/calculations';
+import { TutorialGuide, TutorialStep } from '../components/TutorialGuide';
+import { tutorialService } from '../services/TutorialService';
+import { useTutorial } from '../contexts/TutorialContext';
 import {
   startOfMonth,
   endOfMonth,
@@ -29,6 +32,7 @@ import { ru } from 'date-fns/locale';
 
 export function CalendarScreen() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { getTriggeredPage, clearTrigger } = useTutorial();
   
   // Initialize state from URL params
   const getViewFromUrl = (): 'month' | 'week' | 'day' => {
@@ -58,6 +62,62 @@ export function CalendarScreen() {
   const [selectedSession, setSelectedSession] = useState<CalendarSession | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingSession, setEditingSession] = useState<CalendarSession | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  // Create tutorial steps dynamically based on view
+  const getTutorialSteps = (): TutorialStep[] => {
+    const steps: TutorialStep[] = [
+      {
+        target: '#tutorial-view-switcher',
+        title: 'Переключение вида',
+        description: 'Выберите удобный вид календаря: месяц, неделя или день.',
+        position: 'bottom',
+      },
+      {
+        target: '#tutorial-date-nav',
+        title: 'Навигация по датам',
+        description: 'Перемещайтесь между периодами с помощью стрелок или кнопки "Сегодня".',
+        position: 'bottom',
+      },
+    ];
+
+    // Add session tutorial step only if there are sessions or in month view
+    if (view === 'month' && sessions.length > 0) {
+      steps.push({
+        target: '#tutorial-sessions',
+        title: 'Занятия в календаре',
+        description: 'В квадратиках дней отображаются занятия. Кликните на любое занятие, чтобы просмотреть детали, добавить заметки или отредактировать его.',
+        position: 'bottom',
+      });
+    } else if (view === 'month') {
+      // If no sessions, show general info about calendar grid
+      steps.push({
+        target: '.grid.grid-cols-7',
+        title: 'Занятия в календаре',
+        description: 'В квадратиках дней будут отображаться занятия. Кликните на любое занятие, чтобы просмотреть детали, добавить заметки или отредактировать его.',
+        position: 'center',
+      });
+    }
+
+    steps.push(
+      {
+        target: '#tutorial-fab',
+        title: 'Добавление занятия',
+        description: 'Добавьте новое занятие в календарь, нажав эту кнопку.',
+        position: 'top',
+      },
+      {
+        target: '#tutorial-nav',
+        title: 'Навигация',
+        description: 'Переключайтесь между разделами приложения: Клиенты, Календарь, Платежи и Итоги.',
+        position: 'top',
+      }
+    );
+
+    return steps;
+  };
+
+  const tutorialSteps = getTutorialSteps();
 
   // Initialize from URL on mount
   useEffect(() => {
@@ -114,6 +174,29 @@ export function CalendarScreen() {
   useEffect(() => {
     loadData();
   }, [currentDate, view]);
+
+  // Check if tutorial should be shown
+  useEffect(() => {
+    if (selectedSession || showForm) {
+      return;
+    }
+
+    const triggeredPage = getTriggeredPage();
+    if (triggeredPage === 'calendar') {
+      setShowTutorial(true);
+      clearTrigger();
+      return;
+    }
+
+    // Check if tutorial was completed
+    if (!tutorialService.isCompleted('calendar')) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        setShowTutorial(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedSession, showForm, getTriggeredPage, clearTrigger]);
 
   async function loadData() {
     let dateFrom: Date;
@@ -208,7 +291,7 @@ export function CalendarScreen() {
             ? `Неделя ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'dd.MM')} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}`
             : format(currentDate, 'dd.MM.yyyy')}
         </h1>
-        <div className="flex gap-2">
+        <div id="tutorial-date-nav" data-tutorial-id="tutorial-date-nav" className="flex gap-2">
           <button
             onClick={() => {
               let newDate: Date;
@@ -255,7 +338,7 @@ export function CalendarScreen() {
       </div>
 
       {/* View Switcher */}
-      <div className="flex gap-2 mb-4">
+      <div id="tutorial-view-switcher" data-tutorial-id="tutorial-view-switcher" className="flex gap-2 mb-4">
         {(['month', 'week', 'day'] as const).map((v) => (
           <button
             key={v}
@@ -288,6 +371,9 @@ export function CalendarScreen() {
               const daySessions = getSessionsForDate(day);
               const isToday = toISODate(day) === toISODate(new Date());
               const isCurrentMonth = day.getMonth() === currentDate.getMonth();
+              // Find first day with sessions for tutorial
+              const firstDayWithSessions = days.find(d => getSessionsForDate(d).length > 0);
+              const isFirstDayWithSessions = firstDayWithSessions && toISODate(day) === toISODate(firstDayWithSessions);
               return (
                 <div
                   key={day.toISOString()}
@@ -305,14 +391,18 @@ export function CalendarScreen() {
                     {day.getDate()}
                   </div>
                   <div className="space-y-1">
-                    {daySessions.slice(0, 3).map((session) => {
+                    {daySessions.slice(0, 3).map((session, sessionIndex) => {
                       const client = clients.find((c) => c.id === session.client_id);
                       const paymentStatus = sessionStatuses.get(session.id);
                       const isPaused = isSessionInPause(session);
                       const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
+                      // Add tutorial ID to first session in first day with sessions
+                      const isFirstSession = isFirstDayWithSessions && sessionIndex === 0;
                       return (
                         <div
                           key={session.id}
+                          id={isFirstSession ? 'tutorial-sessions' : undefined}
+                          data-tutorial-id={isFirstSession ? 'tutorial-sessions' : undefined}
                           onClick={() => handleSessionSelect(session)}
                           className={`text-xs p-1 rounded ${colorClasses} cursor-pointer hover:opacity-80 truncate`}
                         >
@@ -501,6 +591,8 @@ export function CalendarScreen() {
       {/* FAB */}
       {!showForm && !selectedSession && (
         <button
+          id="tutorial-fab"
+          data-tutorial-id="tutorial-fab"
           onClick={() => setShowForm(true)}
           className="fixed bottom-24 right-4 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center"
         >
@@ -509,6 +601,20 @@ export function CalendarScreen() {
           </svg>
         </button>
       )}
+
+      {/* Tutorial Guide */}
+      <TutorialGuide
+        steps={tutorialSteps}
+        isActive={showTutorial && !selectedSession && !showForm}
+        onComplete={() => {
+          setShowTutorial(false);
+          tutorialService.markCompleted('calendar');
+        }}
+        onSkip={() => {
+          setShowTutorial(false);
+          tutorialService.markCompleted('calendar');
+        }}
+      />
 
       {/* Session Form */}
       {showForm && (
