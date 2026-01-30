@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Client, CreatePaymentDto, PaymentMethod } from '../db/types';
 import { toISODate } from '../utils/dateUtils';
+import { AlertDialog } from './AlertDialog';
 
 interface PaymentFormProps {
   clients: Client[];
@@ -29,15 +30,16 @@ export function PaymentForm({ clients, payment, defaultClientId, onSave, onCance
     comment: payment?.comment || '',
     autoAllocate: true,
   });
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!formData.client_id) {
-      alert('Выберите клиента');
+      setAlertMessage('Выберите клиента');
       return;
     }
     if (formData.amount <= 0) {
-      alert('Сумма должна быть больше нуля');
+      setAlertMessage('Сумма должна быть больше нуля');
       return;
     }
 
@@ -182,6 +184,9 @@ export function PaymentForm({ clients, payment, defaultClientId, onSave, onCance
           </div>
         </form>
       </div>
+      {alertMessage && (
+        <AlertDialog message={alertMessage} onClose={() => setAlertMessage(null)} />
+      )}
     </div>
   );
 }

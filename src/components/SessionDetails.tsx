@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { CalendarSession, Client } from '../db/types';
 import { formatDate, formatTime } from '../utils/dateUtils';
 import { calculateSessionStatusWithBalance, getEffectiveAllocatedAmount, calculateSessionPrice } from '../utils/calculations';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface SessionDetailsProps {
   session: CalendarSession;
@@ -23,6 +24,7 @@ export function SessionDetails({
   const [status, setStatus] = useState<'paid' | 'partially_paid' | 'unpaid'>('unpaid');
   const [allocated, setAllocated] = useState(0);
   const [price, setPrice] = useState(0);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   useEffect(() => {
     loadStatus();
@@ -134,10 +136,11 @@ export function SessionDetails({
                 </button>
                 <button
                   onClick={() => {
-                    if ((status === 'paid' || status === 'partially_paid') && !confirm('Занятие оплачено. Вы уверены, что хотите отменить его?')) {
-                      return;
+                    if (status === 'paid' || status === 'partially_paid') {
+                      setShowCancelConfirm(true);
+                    } else {
+                      onCancel();
                     }
-                    onCancel();
                   }}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
@@ -154,6 +157,19 @@ export function SessionDetails({
           </div>
         </div>
       </div>
+      {showCancelConfirm && (
+        <ConfirmDialog
+          message="Занятие оплачено. Вы уверены, что хотите отменить его?"
+          onConfirm={() => {
+            setShowCancelConfirm(false);
+            onCancel();
+          }}
+          onCancel={() => setShowCancelConfirm(false)}
+          confirmText="Отменить занятие"
+          cancelText="Нет"
+          confirmButtonClass="bg-red-600 hover:bg-red-700"
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Client, CreateClientDto } from '../db/types';
+import { AlertDialog } from './AlertDialog';
 
 interface ClientFormProps {
   client?: Client;
@@ -14,11 +15,12 @@ export function ClientForm({ client, onSave, onCancel }: ClientFormProps) {
     telegram: client?.telegram || '',
     notes: client?.notes || '',
   });
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!formData.full_name.trim()) {
-      alert('Имя обязательно для заполнения');
+      setAlertMessage('Имя обязательно для заполнения');
       return;
     }
     onSave(formData);
@@ -98,6 +100,9 @@ export function ClientForm({ client, onSave, onCancel }: ClientFormProps) {
           </div>
         </form>
       </div>
+      {alertMessage && (
+        <AlertDialog message={alertMessage} onClose={() => setAlertMessage(null)} />
+      )}
     </div>
   );
 }

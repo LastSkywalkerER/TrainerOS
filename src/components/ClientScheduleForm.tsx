@@ -4,6 +4,7 @@ import { scheduleService } from '../services/ScheduleService';
 import { generateId } from '../utils/uuid';
 import { toISODate, formatDate } from '../utils/dateUtils';
 import { getEndOfNextMonth } from '../utils/dateUtils';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface ClientScheduleFormProps {
   clientId: string;
@@ -17,6 +18,7 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
   const [showAddForm, setShowAddForm] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     weekday: 1 as 1 | 2 | 3 | 4 | 5 | 6 | 7,
     start_time: '09:00',
@@ -117,8 +119,13 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
   }
 
   function handleDeleteRule(index: number) {
-    if (confirm('Удалить это правило расписания?')) {
-      setRules(rules.filter((_, i) => i !== index));
+    setDeleteConfirmIndex(index);
+  }
+
+  function confirmDeleteRule() {
+    if (deleteConfirmIndex !== null) {
+      setRules(rules.filter((_, i) => i !== deleteConfirmIndex));
+      setDeleteConfirmIndex(null);
     }
   }
 
@@ -505,6 +512,17 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
         <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           Нет правил расписания. Добавьте первое правило, чтобы начать.
         </div>
+      )}
+
+      {deleteConfirmIndex !== null && (
+        <ConfirmDialog
+          message="Удалить это правило расписания?"
+          onConfirm={confirmDeleteRule}
+          onCancel={() => setDeleteConfirmIndex(null)}
+          confirmText="Удалить"
+          cancelText="Отмена"
+          confirmButtonClass="bg-red-600 hover:bg-red-700"
+        />
       )}
     </div>
   );

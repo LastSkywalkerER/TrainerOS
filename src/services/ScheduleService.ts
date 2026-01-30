@@ -110,7 +110,7 @@ export class ScheduleService {
     // This will respect the new valid_to and not create sessions after it
     if (updates.rules || updates.generation_horizon_days || updates.valid_from || updates.valid_to) {
       // Cancel old template-generated sessions before regenerating
-      await this.cancelTemplateSessions(template.client_id, id);
+      await this.cancelTemplateSessions(template.client_id);
       await this.generateSessions(id);
     }
 
@@ -214,14 +214,8 @@ export class ScheduleService {
           }
         }
 
-        // Check if date is on or after archive_date (only if client is actually archived)
-        if (client.status === 'archived' && client.archive_date) {
-          const archiveDateStr = toISODate(client.archive_date);
-          const dateStr = toISODate(date);
-          if (dateStr >= archiveDateStr) {
-            continue; // Skip dates on or after archive_date
-          }
-        }
+        // Note: We don't need to check archive_date here because we already check
+        // client.status !== 'active' above, which returns early for archived clients
 
         const weekday = getWeekday(date);
         // Ensure both values are numbers for comparison (in case weekday was stored as string)
@@ -269,12 +263,12 @@ export class ScheduleService {
     if (template) {
       // Cancel all existing template-generated sessions before regenerating
       // This ensures old sessions are removed when schedule is updated
-      await this.cancelTemplateSessions(clientId, template.id);
+      await this.cancelTemplateSessions(clientId);
       await this.generateSessions(template.id);
     }
   }
 
-  async cancelTemplateSessions(clientId: string, templateId: string): Promise<void> {
+  async cancelTemplateSessions(clientId: string): Promise<void> {
     // Get all template-generated sessions for this client that are not custom
     // Cancel all non-custom sessions to ensure clean regeneration
     // This handles cases where rules were changed or removed

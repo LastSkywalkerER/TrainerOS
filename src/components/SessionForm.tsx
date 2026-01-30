@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Client, CreateSessionDto, CalendarSession } from '../db/types';
 import { toISODate } from '../utils/dateUtils';
 import { calendarSessionService } from '../services/CalendarSessionService';
+import { AlertDialog } from './AlertDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface SessionFormProps {
   clients: Client[];
@@ -20,6 +22,8 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
     notes: session?.notes || '',
   });
   const [conflicts, setConflicts] = useState<CalendarSession[]>([]);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [conflictConfirm, setConflictConfirm] = useState(false);
 
   useEffect(() => {
     checkConflicts();
@@ -38,18 +42,19 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!formData.client_id) {
-      alert('Выберите клиента');
+      setAlertMessage('Выберите клиента');
       return;
     }
-    if (conflicts.length > 0) {
-      const conflictClients = conflicts.map(c => {
-        const client = clients.find(cl => cl.id === c.client_id);
-        return client?.full_name || 'Неизвестно';
-      }).join(', ');
-      if (!confirm(`В это время уже есть занятия у других клиентов: ${conflictClients}. Продолжить?`)) {
-        return;
-      }
+    if (conflicts.length > 0 && !conflictConfirm) {
+      setConflictConfirm(true);
+      return;
     }
+    onSave(formData);
+    setConflictConfirm(false);
+  }
+
+  function handleConflictConfirm() {
+    setConflictConfirm(false);
     onSave(formData);
   }
 
@@ -186,6 +191,21 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
           </div>
         </form>
       </div>
+      {alertMessage && (
+        <AlertDialog message={alertMessage} onClose={() => setAlertMessage(null)} />
+      )}
+      {conflictConfirm && (
+        <ConfirmDialog
+          message={`В это время уже есть занятия у других клиентов: ${conflicts.map(c => {
+            const client = clients.find(cl => cl.id === c.client_id);
+            return client?.full_name || 'Неизвестно';
+          }).join(', ')}. Продолжить?`}
+          onConfirm={handleConflictConfirm}
+          onCancel={() => setConflictConfirm(false)}
+          confirmText="Продолжить"
+          cancelText="Отмена"
+        />
+      )}
     </div>
   );
 }
