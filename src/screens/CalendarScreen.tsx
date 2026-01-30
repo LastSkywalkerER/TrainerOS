@@ -3,15 +3,13 @@ import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
 import { clientService } from '../services/ClientService';
 import { Client } from '../db/types';
-import { formatDate, formatTime, toISODate } from '../utils/dateUtils';
-import { calculateSessionStatus } from '../utils/calculations';
+import { formatTime, toISODate } from '../utils/dateUtils';
 import { SessionForm } from '../components/SessionForm';
 import { SessionDetails } from '../components/SessionDetails';
 import {
   startOfMonth,
   endOfMonth,
   eachDayOfInterval,
-  getDay,
   addMonths,
   subMonths,
   startOfWeek,
@@ -71,10 +69,6 @@ export function CalendarScreen() {
     return sessions.filter((s) => s.date === dateStr && s.status !== 'canceled');
   }
 
-  function getStatusColor(status: string): string {
-    // This will be calculated dynamically, but for now use a placeholder
-    return 'bg-blue-100';
-  }
 
   return (
     <div className="p-4">

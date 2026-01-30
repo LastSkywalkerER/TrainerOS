@@ -83,7 +83,7 @@ export function SessionDetails({
 
           <div>
             <div className="text-sm text-gray-600 dark:text-gray-400">Статус занятия</div>
-            <span className={`px-3 py-1 rounded text-sm ${statusColors[session.status] || 'bg-gray-100'}`}>
+            <span className="px-3 py-1 rounded text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
               {session.status === 'planned' ? 'Запланировано' : session.status === 'completed' ? 'Завершено' : 'Отменено'}
             </span>
           </div>

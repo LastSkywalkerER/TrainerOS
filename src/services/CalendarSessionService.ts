@@ -2,10 +2,9 @@ import { db } from '../db/database';
 import {
   CalendarSession,
   CreateSessionDto,
-  SessionStatus,
 } from '../db/types';
 import { generateId } from '../utils/uuid';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 export class CalendarSessionService {
   async createCustom(
@@ -150,7 +149,8 @@ export class CalendarSessionService {
   }
 
   async getById(id: string): Promise<CalendarSession | null> {
-    return db.calendarSessions.get(id) || null;
+    const session = await db.calendarSessions.get(id);
+    return session ?? null;
   }
 }
 

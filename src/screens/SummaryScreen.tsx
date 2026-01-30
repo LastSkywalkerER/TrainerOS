@@ -3,7 +3,6 @@ import { Client } from '../db/types';
 import { clientService } from '../services/ClientService';
 import { analyticsService } from '../services/AnalyticsService';
 import { MonthlyStats } from '../db/types';
-import { formatDate } from '../utils/dateUtils';
 
 export function SummaryScreen() {
   const [monthStats, setMonthStats] = useState<MonthlyStats | null>(null);

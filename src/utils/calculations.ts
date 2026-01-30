@@ -1,4 +1,3 @@
-import { CalendarSession, PaymentAllocation, Package } from '../db/types';
 import { db } from '../db/database';
 
 export type PaymentStatus = 'paid' | 'partially_paid' | 'unpaid';

@@ -56,7 +56,8 @@ export class ClientService {
   }
 
   async getById(id: string): Promise<Client | null> {
-    return db.clients.get(id) || null;
+    const client = await db.clients.get(id);
+    return client ?? null;
   }
 
   async delete(id: string): Promise<void> {
@@ -66,7 +67,7 @@ export class ClientService {
 
   async hardDelete(id: string): Promise<void> {
     // Hard delete - remove all related data
-    await db.transaction('rw', db.clients, db.scheduleTemplates, db.calendarSessions, db.packages, db.payments, db.paymentAllocations, async () => {
+    await db.transaction('rw', [db.clients, db.scheduleTemplates, db.calendarSessions, db.packages, db.payments, db.paymentAllocations], async () => {
       // Get all related sessions
       const sessions = await db.calendarSessions.where('client_id').equals(id).toArray();
       const sessionIds = sessions.map(s => s.id);

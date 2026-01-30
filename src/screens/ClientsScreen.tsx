@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Client } from '../db/types';
 import { clientService } from '../services/ClientService';
-import { analyticsService } from '../services/AnalyticsService';
 import { ClientCard } from '../components/ClientCard';
 import { ClientForm } from '../components/ClientForm';
 import { ClientProfile } from '../components/ClientProfile';

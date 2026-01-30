@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Payment, Client } from '../db/types';
 import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
-import { formatDate, formatDateTime } from '../utils/dateUtils';
+import { formatDate } from '../utils/dateUtils';
 import { PaymentForm } from '../components/PaymentForm';
 import { PaymentDetails } from '../components/PaymentDetails';
 

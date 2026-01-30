@@ -1,6 +1,5 @@
 import { db } from '../db/database';
 import { calculateSessionStatus } from '../utils/calculations';
-import { analyticsService } from './AnalyticsService';
 
 export class RecalculationService {
   async recalculateClient(clientId: string): Promise<void> {

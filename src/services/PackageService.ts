@@ -1,5 +1,5 @@
 import { db } from '../db/database';
-import { Package, CreatePackageDto, PackageStatus } from '../db/types';
+import { Package, CreatePackageDto } from '../db/types';
 import { generateId } from '../utils/uuid';
 import { calculateSessionPrice } from '../utils/calculations';
 
