@@ -498,23 +498,6 @@ export function CalendarScreen() {
           }
         };
 
-        // Helper function to parse time string to minutes
-        const timeToMinutes = (timeStr: string): number => {
-          const [hours, minutes] = timeStr.split(':').map(Number);
-          return hours * 60 + minutes;
-        };
-
-        // Helper function to check if two sessions overlap
-        const sessionsOverlap = (session1: CalendarSession, session2: CalendarSession): boolean => {
-          const start1 = timeToMinutes(session1.start_time);
-          const start2 = timeToMinutes(session2.start_time);
-          // Assume default duration of 1 hour if not specified
-          const end1 = start1 + 60;
-          const end2 = start2 + 60;
-          return !(end1 <= start2 || end2 <= start1);
-        };
-
-
         // Helper function to calculate which mini-cells a session occupies
         // Each hour cell is divided into 4x4 = 16 mini-cells
         // Each session occupies 1 mini-cell (1 column x 1 row) per hour slot, or full width/height if single session
