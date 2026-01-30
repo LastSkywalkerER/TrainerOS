@@ -5,8 +5,11 @@ import { ClientStats } from '../db/types';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
 import { ClientScheduleForm } from './ClientScheduleForm';
 import { PaymentForm } from './PaymentForm';
+import { PauseDialog } from './PauseDialog';
+import { ArchiveDialog } from './ArchiveDialog';
 import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
+import { scheduleService } from '../services/ScheduleService';
 
 interface ClientProfileProps {
   client: Client;
@@ -22,6 +25,8 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showPauseDialog, setShowPauseDialog] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [currentClient, setCurrentClient] = useState<Client>(client);
 
   useEffect(() => {
@@ -117,35 +122,27 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                   {currentClient.status === 'active' ? 'Активен' : currentClient.status === 'paused' ? 'На паузе' : 'Архив'}
                 </span>
               </div>
+              {currentClient.status === 'paused' && currentClient.pause_from && currentClient.pause_to && (
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Период паузы: {formatDate(currentClient.pause_from)} - {formatDate(currentClient.pause_to)}
+                </div>
+              )}
+              {currentClient.status === 'archived' && currentClient.archive_date && (
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                  Архивирован с: {formatDate(currentClient.archive_date)}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 {currentClient.status === 'active' && (
                   <>
                     <button
-                      onClick={async () => {
-                        if (confirm('Поставить клиента на паузу?')) {
-                          await clientService.pause(currentClient.id);
-                          const updated = await clientService.getById(currentClient.id);
-                          if (updated) {
-                            setCurrentClient(updated);
-                            onStatusChange?.();
-                          }
-                        }
-                      }}
+                      onClick={() => setShowPauseDialog(true)}
                       className="px-3 py-1.5 text-sm bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200 rounded-lg hover:bg-yellow-200 dark:hover:bg-yellow-900/60 transition-colors"
                     >
                       Поставить на паузу
                     </button>
                     <button
-                      onClick={async () => {
-                        if (confirm('Переместить клиента в архив?')) {
-                          await clientService.archive(currentClient.id);
-                          const updated = await clientService.getById(currentClient.id);
-                          if (updated) {
-                            setCurrentClient(updated);
-                            onStatusChange?.();
-                          }
-                        }
-                      }}
+                      onClick={() => setShowArchiveDialog(true)}
                       className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                     >
                       В архив
@@ -168,16 +165,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                       Возобновить
                     </button>
                     <button
-                      onClick={async () => {
-                        if (confirm('Переместить клиента в архив?')) {
-                          await clientService.archive(currentClient.id);
-                          const updated = await clientService.getById(currentClient.id);
-                          if (updated) {
-                            setCurrentClient(updated);
-                            onStatusChange?.();
-                          }
-                        }
-                      }}
+                      onClick={() => setShowArchiveDialog(true)}
                       className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                     >
                       В архив
@@ -342,6 +330,42 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
           </div>
         )}
       </div>
+
+      {/* Pause Dialog */}
+      {showPauseDialog && (
+        <PauseDialog
+          onSave={async (pauseFrom, pauseTo) => {
+            await clientService.pause(currentClient.id, pauseFrom, pauseTo);
+            const updated = await clientService.getById(currentClient.id);
+            if (updated) {
+              setCurrentClient(updated);
+              onStatusChange?.();
+            }
+            setShowPauseDialog(false);
+          }}
+          onCancel={() => setShowPauseDialog(false)}
+          initialPauseFrom={currentClient.pause_from}
+          initialPauseTo={currentClient.pause_to}
+        />
+      )}
+
+      {/* Archive Dialog */}
+      {showArchiveDialog && (
+        <ArchiveDialog
+          onSave={async (archiveDate) => {
+            await clientService.archive(currentClient.id, archiveDate);
+            await scheduleService.clearScheduleFromDate(currentClient.id, archiveDate);
+            const updated = await clientService.getById(currentClient.id);
+            if (updated) {
+              setCurrentClient(updated);
+              onStatusChange?.();
+            }
+            setShowArchiveDialog(false);
+          }}
+          onCancel={() => setShowArchiveDialog(false)}
+          initialArchiveDate={currentClient.archive_date}
+        />
+      )}
     </div>
   );
 }

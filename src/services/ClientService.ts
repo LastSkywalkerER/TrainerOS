@@ -36,16 +36,27 @@ export class ClientService {
     return updated;
   }
 
-  async archive(id: string): Promise<void> {
-    await this.update(id, { status: 'archived' });
+  async archive(id: string, archiveDate: Date): Promise<void> {
+    await this.update(id, { 
+      status: 'archived',
+      archive_date: archiveDate,
+    });
   }
 
-  async pause(id: string): Promise<void> {
-    await this.update(id, { status: 'paused' });
+  async pause(id: string, pauseFrom: Date, pauseTo: Date): Promise<void> {
+    await this.update(id, { 
+      status: 'paused',
+      pause_from: pauseFrom,
+      pause_to: pauseTo,
+    });
   }
 
   async resume(id: string): Promise<void> {
-    await this.update(id, { status: 'active' });
+    await this.update(id, { 
+      status: 'active',
+      pause_from: undefined,
+      pause_to: undefined,
+    });
   }
 
   async getAll(filters?: { status?: ClientStatus }): Promise<Client[]> {

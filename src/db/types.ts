@@ -9,6 +9,9 @@ export interface Client {
   telegram?: string;
   notes?: string;
   status: ClientStatus;
+  pause_from?: Date;
+  pause_to?: Date;
+  archive_date?: Date;
   created_at: Date;
   updated_at: Date;
 }
@@ -28,6 +31,8 @@ export interface ScheduleTemplate {
   timezone: string; // IANA timezone
   rules: ScheduleRule[];
   generation_horizon_days: number;
+  valid_from?: Date;
+  valid_to?: Date;
   created_at: Date;
   updated_at: Date;
 }
@@ -98,6 +103,8 @@ export interface CreateTemplateDto {
   timezone?: string;
   rules: Omit<ScheduleRule, 'rule_id'>[];
   generation_horizon_days?: number;
+  valid_from?: Date;
+  valid_to?: Date;
 }
 
 export interface CreateSessionDto {

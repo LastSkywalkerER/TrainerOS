@@ -2,6 +2,7 @@ import { db } from '../db/database';
 import { Payment, CreatePaymentDto } from '../db/types';
 import { generateId } from '../utils/uuid';
 import { allocationService } from './AllocationService';
+import { isDateInRange } from '../utils/dateUtils';
 
 export class PaymentService {
   async create(
@@ -79,6 +80,12 @@ export class PaymentService {
       throw new Error(`Payment with id ${paymentId} not found`);
     }
 
+    // Get client to check pause period
+    const client = await db.clients.get(payment.client_id);
+    if (!client) {
+      return;
+    }
+
     // Get unpaid sessions for the client, ordered by date
     const sessions = await db.calendarSessions
       .where('client_id')
@@ -91,6 +98,14 @@ export class PaymentService {
     for (const session of sessions) {
       if (remainingAmount <= 0) {
         break;
+      }
+
+      // Skip sessions in pause period
+      if (client.pause_from && client.pause_to) {
+        const sessionDate = new Date(session.date);
+        if (isDateInRange(sessionDate, client.pause_from, client.pause_to)) {
+          continue; // Skip this session - it's in pause period
+        }
       }
 
       const allocated = await allocationService.getAllocatedAmount(session.id);

@@ -1,4 +1,4 @@
-import { format, addDays, getDay, startOfDay, parseISO, isBefore, isAfter } from 'date-fns';
+import { format, addDays, getDay, startOfDay, parseISO, isBefore, isAfter, endOfMonth, addMonths, startOfMonth, subMonths } from 'date-fns';
 
 export function formatDate(date: Date | string): string {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
@@ -54,4 +54,17 @@ export function addMinutes(timeStr: string, minutes: number): string {
   const newHours = Math.floor(totalMinutes / 60) % 24;
   const newMins = totalMinutes % 60;
   return `${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`;
+}
+
+export function getEndOfNextMonth(date: Date = new Date()): Date {
+  return endOfMonth(addMonths(date, 1));
+}
+
+export function shouldAutoExtendSchedule(validTo?: Date): boolean {
+  if (!validTo) {
+    return true; // No end date means auto-extend
+  }
+  const today = new Date();
+  const oneMonthBeforeEnd = subMonths(validTo, 1);
+  return isAfter(today, oneMonthBeforeEnd) || !isBefore(today, validTo);
 }

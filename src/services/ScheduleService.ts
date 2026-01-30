@@ -6,8 +6,9 @@ import {
   CalendarSession,
 } from '../db/types';
 import { generateId } from '../utils/uuid';
-import { getWeekday, toISODate, getDatesInRange } from '../utils/dateUtils';
+import { getWeekday, toISODate, getDatesInRange, isDateInRange, getEndOfNextMonth, shouldAutoExtendSchedule } from '../utils/dateUtils';
 import { calendarSessionService } from './CalendarSessionService';
+import { isBefore, isAfter, startOfDay } from 'date-fns';
 
 export class ScheduleService {
   async createTemplate(
@@ -20,12 +21,22 @@ export class ScheduleService {
       rule_id: generateId(),
     }));
 
+    // Set valid_from to today if not provided
+    const validFrom = template.valid_from || now;
+    // Set valid_to to end of next month if not provided (auto-extend)
+    let validTo = template.valid_to;
+    if (!validTo) {
+      validTo = getEndOfNextMonth(now);
+    }
+
     const scheduleTemplate: ScheduleTemplate = {
       id: generateId(),
       client_id: clientId,
       timezone: template.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
       rules,
       generation_horizon_days: template.generation_horizon_days || 90,
+      valid_from: validFrom,
+      valid_to: validTo,
       created_at: now,
       updated_at: now,
     };
@@ -61,10 +72,45 @@ export class ScheduleService {
       }));
     }
 
+    // Handle valid_to auto-extend logic only if valid_to is explicitly set to undefined/null
+    // If user provides a date (even if earlier), respect it
+    if (updates.valid_to === undefined && !updated.valid_to) {
+      // Only auto-set if valid_to was not provided and is not set
+      updated.valid_to = getEndOfNextMonth(new Date());
+    }
+
     await db.scheduleTemplates.update(id, updated);
 
+    // If valid_to was updated, check if we need to cancel sessions
+    // Do this BEFORE regenerating sessions to avoid recreating canceled sessions
+    if (updates.valid_to !== undefined) {
+      const oldValidTo = template.valid_to;
+      const newValidTo = updated.valid_to;
+      
+      // Compare dates properly - convert to timestamps for reliable comparison
+      const oldTimestamp = oldValidTo ? oldValidTo.getTime() : null;
+      const newTimestamp = newValidTo ? newValidTo.getTime() : null;
+      
+      // If valid_to was set to an earlier date, cancel sessions on/after the new date
+      if (oldTimestamp && newTimestamp && newTimestamp < oldTimestamp) {
+        // New date is earlier - cancel sessions on or after new date
+        await this.cancelSessionsAfterDate(template.client_id, newValidTo);
+      } else if (!oldTimestamp && newTimestamp) {
+        // valid_to was set for the first time - cancel sessions on or after that date
+        await this.cancelSessionsAfterDate(template.client_id, newValidTo);
+      }
+    }
+
+    // If valid_from was updated to a later date, cancel sessions before that date
+    if (updates.valid_from !== undefined && template.valid_from && updated.valid_from) {
+      if (updated.valid_from > template.valid_from) {
+        await this.cancelSessionsBeforeDate(template.client_id, updated.valid_from);
+      }
+    }
+
     // Regenerate sessions if template changed
-    if (updates.rules || updates.generation_horizon_days) {
+    // This will respect the new valid_to and not create sessions after it
+    if (updates.rules || updates.generation_horizon_days || updates.valid_from || updates.valid_to) {
       await this.generateSessions(id);
     }
 
@@ -81,13 +127,53 @@ export class ScheduleService {
     }
 
     const client = await db.clients.get(template.client_id);
-    if (!client || (client.status !== 'active')) {
-      // Don't generate sessions for paused/archived clients
+    if (!client) {
+      return [];
+    }
+
+    // Check if client is archived - don't generate sessions after archive_date
+    if (client.archive_date) {
+      const archiveDate = startOfDay(client.archive_date);
+      const today = startOfDay(new Date());
+      if (today >= archiveDate) {
+        return [];
+      }
+    }
+
+    // Check auto-extend logic for schedule validity
+    // Only auto-extend if valid_to is not set (undefined/null) - meaning user wants auto-extend
+    // If valid_to is explicitly set by user, respect their choice even if it's in the past
+    // We check if valid_to is undefined/null, not just if it's falsy
+    if (template.valid_to === undefined || template.valid_to === null) {
+      // Auto-extend valid_to to end of next month only if it was not explicitly set
+      const newValidTo = getEndOfNextMonth(new Date());
+      await db.scheduleTemplates.update(templateId, { valid_to: newValidTo });
+      template.valid_to = newValidTo;
+    } else if (shouldAutoExtendSchedule(template.valid_to)) {
+      // If valid_to is set but approaching expiration, auto-extend (only for auto-extended schedules)
+      // But we need to be careful - if user just set a date, don't override it
+      // This should only happen for schedules that were previously auto-extended
+      // For now, we'll skip this to avoid overriding user's explicit choice
+    }
+
+    // Check schedule validity period
+    const today = new Date();
+    if (template.valid_from && isBefore(today, startOfDay(template.valid_from))) {
+      // Schedule hasn't started yet
+      return [];
+    }
+
+    if (template.valid_to && isAfter(today, startOfDay(template.valid_to))) {
+      // Schedule has expired
+      return [];
+    }
+
+    // Don't generate sessions for paused clients (but allow if they're active)
+    if (client.status !== 'active') {
       return [];
     }
 
     const horizon = horizonDays || template.generation_horizon_days;
-    const today = new Date();
     const dates = getDatesInRange(today, horizon);
     const generatedSessions: CalendarSession[] = [];
 
@@ -97,12 +183,45 @@ export class ScheduleService {
       }
 
       for (const date of dates) {
+        const dateStr = toISODate(date);
+        
+        // Check if date is within schedule validity period
+        if (template.valid_from) {
+          const validFromStr = toISODate(template.valid_from);
+          if (dateStr < validFromStr) {
+            continue;
+          }
+        }
+        if (template.valid_to) {
+          const validToStr = toISODate(template.valid_to);
+          // Skip dates after valid_to (dates > valid_to)
+          if (dateStr > validToStr) {
+            continue;
+          }
+        }
+
+        // Check if date is in pause period
+        if (client.pause_from && client.pause_to) {
+          if (isDateInRange(date, client.pause_from, client.pause_to)) {
+            continue; // Skip dates in pause period
+          }
+        }
+
+        // Check if date is on or after archive_date
+        if (client.archive_date) {
+          const archiveDateStr = toISODate(client.archive_date);
+          const dateStr = toISODate(date);
+          if (dateStr >= archiveDateStr) {
+            continue; // Skip dates on or after archive_date
+          }
+        }
+
         const weekday = getWeekday(date);
         if (weekday !== rule.weekday) {
           continue;
         }
 
-        const dateStr = toISODate(date);
+        // dateStr already defined above
 
         // Check if session already exists (idempotent generation)
         const existing = await db.calendarSessions
@@ -159,6 +278,60 @@ export class ScheduleService {
       .where('client_id')
       .equals(clientId)
       .sortBy('created_at');
+  }
+
+  async clearScheduleFromDate(clientId: string, archiveDate: Date): Promise<void> {
+    // Cancel all future sessions starting from archive_date
+    const archiveDateStr = toISODate(archiveDate);
+    const sessions = await db.calendarSessions
+      .where('client_id')
+      .equals(clientId)
+      .and((s) => s.date >= archiveDateStr && s.status !== 'canceled')
+      .toArray();
+
+    for (const session of sessions) {
+      await calendarSessionService.cancel(session.id);
+    }
+  }
+
+  async cancelSessionsAfterDate(clientId: string, date: Date): Promise<void> {
+    // Cancel all sessions on or after the specified date (only template-generated sessions)
+    // Note: date is the valid_to date, so we cancel sessions >= date (on or after)
+    const dateStr = toISODate(date);
+    
+    const allSessions = await db.calendarSessions
+      .where('client_id')
+      .equals(clientId)
+      .toArray();
+    
+    // Filter sessions that are on or after the date, not canceled, and not custom
+    const sessionsToCancel = allSessions.filter((s) => 
+      s.date >= dateStr && 
+      s.status !== 'canceled' && 
+      !s.is_custom
+    );
+    
+    if (sessionsToCancel.length > 0) {
+      console.log(`Canceling ${sessionsToCancel.length} sessions for client ${clientId} on or after ${dateStr}`);
+      
+      for (const session of sessionsToCancel) {
+        await calendarSessionService.cancel(session.id);
+      }
+    }
+  }
+
+  async cancelSessionsBeforeDate(clientId: string, date: Date): Promise<void> {
+    // Cancel all sessions before the specified date (only template-generated sessions)
+    const dateStr = toISODate(date);
+    const sessions = await db.calendarSessions
+      .where('client_id')
+      .equals(clientId)
+      .and((s) => s.date < dateStr && s.status !== 'canceled' && !s.is_custom)
+      .toArray();
+
+    for (const session of sessions) {
+      await calendarSessionService.cancel(session.id);
+    }
   }
 }
 

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ScheduleTemplate, ScheduleRule } from '../db/types';
 import { scheduleService } from '../services/ScheduleService';
 import { generateId } from '../utils/uuid';
+import { toISODate, formatDate } from '../utils/dateUtils';
+import { getEndOfNextMonth } from '../utils/dateUtils';
 
 interface ClientScheduleFormProps {
   clientId: string;
@@ -22,6 +24,11 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     base_price: '',
     is_active: true,
   });
+  const [templatePeriod, setTemplatePeriod] = useState({
+    valid_from: toISODate(new Date()),
+    valid_to: '',
+    noEndDate: true,
+  });
 
   useEffect(() => {
     loadTemplate();
@@ -32,9 +39,19 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     if (existingTemplate) {
       setTemplate(existingTemplate);
       setRules(existingTemplate.rules);
+      setTemplatePeriod({
+        valid_from: existingTemplate.valid_from ? toISODate(existingTemplate.valid_from) : toISODate(new Date()),
+        valid_to: existingTemplate.valid_to ? toISODate(existingTemplate.valid_to) : '',
+        noEndDate: !existingTemplate.valid_to,
+      });
     } else {
       setTemplate(null);
       setRules([]);
+      setTemplatePeriod({
+        valid_from: toISODate(new Date()),
+        valid_to: '',
+        noEndDate: true,
+      });
     }
   }
 
@@ -112,7 +129,15 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     setErrorMessage('');
 
     try {
-      console.log('Saving schedule, template exists:', !!template, 'rules count:', rules.length);
+      const validFrom = templatePeriod.valid_from ? new Date(templatePeriod.valid_from) : new Date();
+      // If noEndDate is true, set validTo to undefined (auto-extend)
+      // If noEndDate is false but valid_to is empty, use end of next month as default
+      // If valid_to is provided, use it (even if it's earlier than current date)
+      const validTo = templatePeriod.noEndDate 
+        ? undefined 
+        : (templatePeriod.valid_to && templatePeriod.valid_to.trim() !== '' 
+          ? new Date(templatePeriod.valid_to) 
+          : getEndOfNextMonth());
 
       if (template) {
         // For update, preserve existing rule_id or generate new ones
@@ -120,13 +145,19 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
           ...rule,
           rule_id: rule.rule_id || generateId(),
         }));
-        console.log('Updating template with rules:', rulesForUpdate);
-        await scheduleService.updateTemplate(template.id, { rules: rulesForUpdate });
+        await scheduleService.updateTemplate(template.id, { 
+          rules: rulesForUpdate,
+          valid_from: validFrom,
+          valid_to: validTo,
+        });
       } else {
         // For create, remove rule_id as CreateTemplateDto expects rules without rule_id
         const rulesForCreate = rules.map(({ rule_id, ...rule }) => rule);
-        console.log('Creating template with rules:', rulesForCreate);
-        await scheduleService.createTemplate(clientId, { rules: rulesForCreate });
+        await scheduleService.createTemplate(clientId, { 
+          rules: rulesForCreate,
+          valid_from: validFrom,
+          valid_to: validTo,
+        });
       }
       
       // Regenerate sessions after saving
@@ -173,6 +204,54 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
 
   return (
     <div className="space-y-4">
+      {/* Schedule Period */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+        <h3 className="font-semibold mb-3 text-gray-900 dark:text-white">Период действия расписания</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Действует с
+            </label>
+            <input
+              type="date"
+              value={templatePeriod.valid_from}
+              onChange={(e) => setTemplatePeriod({ ...templatePeriod, valid_from: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div className="flex items-center mb-2">
+            <input
+              type="checkbox"
+              id="noEndDate"
+              checked={templatePeriod.noEndDate}
+              onChange={(e) => setTemplatePeriod({ ...templatePeriod, noEndDate: e.target.checked })}
+              className="mr-2"
+            />
+            <label htmlFor="noEndDate" className="text-sm text-gray-700 dark:text-gray-300">
+              Без конечной даты (автоматическое продление)
+            </label>
+          </div>
+          {!templatePeriod.noEndDate && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Действует до
+              </label>
+              <input
+                type="date"
+                value={templatePeriod.valid_to}
+                onChange={(e) => setTemplatePeriod({ ...templatePeriod, valid_to: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+          )}
+          {template && template.valid_from && template.valid_to && (
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Текущий период: {formatDate(template.valid_from)} - {formatDate(template.valid_to)}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Existing Rules */}
       {rules.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
@@ -392,7 +471,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
             type="button"
             onClick={(e) => {
               e.preventDefault();
-              console.log('Save button clicked, rules:', rules);
               handleSave();
             }}
             disabled={saveStatus === 'saving'}
