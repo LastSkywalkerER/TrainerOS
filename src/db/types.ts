@@ -19,6 +19,7 @@ export interface ScheduleRule {
   start_time: string; // HH:mm format
   duration_minutes: number;
   is_active: boolean;
+  base_price?: number; // Base price for sessions generated from this rule
 }
 
 export interface ScheduleTemplate {

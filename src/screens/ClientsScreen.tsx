@@ -43,12 +43,32 @@ export function ClientsScreen() {
 
   async function handleUpdate(id: string, updates: Partial<Client>) {
     await clientService.update(id, updates);
+    const wasEditingFromProfile = selectedClient?.id === id;
     setEditingClient(null);
-    if (selectedClient?.id === id) {
+    if (wasEditingFromProfile) {
       const updated = await clientService.getById(id);
       setSelectedClient(updated);
     }
     await loadClients();
+  }
+
+  // Check editingClient first, so edit form shows even when selectedClient is set
+  if (editingClient) {
+    return (
+      <ClientForm
+        client={editingClient}
+        onSave={(data) => handleUpdate(editingClient.id, data)}
+        onCancel={() => {
+          setEditingClient(null);
+          // If we were editing from profile, go back to profile
+          if (selectedClient?.id === editingClient.id) {
+            // Keep selectedClient, just clear editingClient
+          } else {
+            setSelectedClient(null);
+          }
+        }}
+      />
+    );
   }
 
   if (selectedClient) {
@@ -57,16 +77,14 @@ export function ClientsScreen() {
         client={selectedClient}
         onBack={() => setSelectedClient(null)}
         onEdit={() => setEditingClient(selectedClient)}
-      />
-    );
-  }
-
-  if (editingClient) {
-    return (
-      <ClientForm
-        client={editingClient}
-        onSave={(data) => handleUpdate(editingClient.id, data)}
-        onCancel={() => setEditingClient(null)}
+        onStatusChange={async () => {
+          // Reload client data after status change
+          const updated = await clientService.getById(selectedClient.id);
+          if (updated) {
+            setSelectedClient(updated);
+          }
+          await loadClients();
+        }}
       />
     );
   }

@@ -17,6 +17,22 @@ export async function calculateSessionPrice(
     return session.price_override;
   }
 
+  // Check base_price from schedule rule if session was generated from template
+  if (session.template_rule_id) {
+    const templates = await db.scheduleTemplates
+      .where('client_id')
+      .equals(clientId)
+      .sortBy('created_at');
+    
+    if (templates.length > 0) {
+      const template = templates[templates.length - 1];
+      const rule = template.rules.find((r) => r.rule_id === session.template_rule_id);
+      if (rule && rule.base_price !== undefined && rule.base_price !== null) {
+        return rule.base_price;
+      }
+    }
+  }
+
   // Get active package
   const activePackage = await db.packages
     .where('client_id')

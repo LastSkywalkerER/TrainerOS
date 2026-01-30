@@ -1,28 +1,48 @@
 import { useState, useEffect } from 'react';
-import { Client } from '../db/types';
+import { Client, Payment } from '../db/types';
 import { analyticsService } from '../services/AnalyticsService';
 import { ClientStats } from '../db/types';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
+import { ClientScheduleForm } from './ClientScheduleForm';
+import { PaymentForm } from './PaymentForm';
+import { paymentService } from '../services/PaymentService';
+import { clientService } from '../services/ClientService';
 
 interface ClientProfileProps {
   client: Client;
   onBack: () => void;
   onEdit: () => void;
+  onStatusChange?: () => void;
 }
 
 type Tab = 'info' | 'schedule' | 'payments' | 'stats';
 
-export function ClientProfile({ client, onBack, onEdit }: ClientProfileProps) {
+export function ClientProfile({ client, onBack, onEdit, onStatusChange }: ClientProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('info');
   const [stats, setStats] = useState<ClientStats | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [currentClient, setCurrentClient] = useState<Client>(client);
+
+  useEffect(() => {
+    setCurrentClient(client);
+  }, [client]);
 
   useEffect(() => {
     loadStats();
-  }, [client.id]);
+    if (activeTab === 'payments') {
+      loadPayments();
+    }
+  }, [currentClient.id, activeTab]);
 
   async function loadStats() {
-    const clientStats = await analyticsService.getClientStats(client.id);
+    const clientStats = await analyticsService.getClientStats(currentClient.id);
     setStats(clientStats);
+  }
+
+  async function loadPayments() {
+    const clientPayments = await paymentService.getAllByClient(currentClient.id);
+    setPayments(clientPayments);
   }
 
   return (
@@ -36,7 +56,7 @@ export function ClientProfile({ client, onBack, onEdit }: ClientProfileProps) {
             </svg>
           </button>
           <h1 className="text-xl font-bold flex-1 text-gray-900 dark:text-white">
-            {client.full_name}
+            {currentClient.full_name}
           </h1>
           <button onClick={onEdit} className="text-blue-600 dark:text-blue-400">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,43 +89,197 @@ export function ClientProfile({ client, onBack, onEdit }: ClientProfileProps) {
           <div className="space-y-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
               <h2 className="font-semibold mb-2 text-gray-900 dark:text-white">Контакты</h2>
-              {client.phone && (
-                <div className="text-gray-700 dark:text-gray-300 mb-1">📞 {client.phone}</div>
+              {currentClient.phone && (
+                <div className="text-gray-700 dark:text-gray-300 mb-1">📞 {currentClient.phone}</div>
               )}
-              {client.telegram && (
-                <div className="text-gray-700 dark:text-gray-300 mb-1">✈️ {client.telegram}</div>
+              {currentClient.telegram && (
+                <div className="text-gray-700 dark:text-gray-300 mb-1">✈️ {currentClient.telegram}</div>
               )}
             </div>
 
-            {client.notes && (
+            {currentClient.notes && (
               <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
                 <h2 className="font-semibold mb-2 text-gray-900 dark:text-white">Заметки</h2>
-                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{client.notes}</p>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{currentClient.notes}</p>
               </div>
             )}
 
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-              <h2 className="font-semibold mb-2 text-gray-900 dark:text-white">Статус</h2>
-              <span className={`px-3 py-1 rounded ${
-                client.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                client.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-              }`}>
-                {client.status === 'active' ? 'Активен' : client.status === 'paused' ? 'На паузе' : 'Архив'}
-              </span>
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="font-semibold text-gray-900 dark:text-white">Статус</h2>
+              </div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className={`px-3 py-1 rounded ${
+                  currentClient.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                  currentClient.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                  'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                }`}>
+                  {currentClient.status === 'active' ? 'Активен' : currentClient.status === 'paused' ? 'На паузе' : 'Архив'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {currentClient.status === 'active' && (
+                  <>
+                    <button
+                      onClick={async () => {
+                        if (confirm('Поставить клиента на паузу?')) {
+                          await clientService.pause(currentClient.id);
+                          const updated = await clientService.getById(currentClient.id);
+                          if (updated) {
+                            setCurrentClient(updated);
+                            onStatusChange?.();
+                          }
+                        }
+                      }}
+                      className="px-3 py-1.5 text-sm bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200 rounded-lg hover:bg-yellow-200 dark:hover:bg-yellow-900/60 transition-colors"
+                    >
+                      Поставить на паузу
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (confirm('Переместить клиента в архив?')) {
+                          await clientService.archive(currentClient.id);
+                          const updated = await clientService.getById(currentClient.id);
+                          if (updated) {
+                            setCurrentClient(updated);
+                            onStatusChange?.();
+                          }
+                        }
+                      }}
+                      className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      В архив
+                    </button>
+                  </>
+                )}
+                {currentClient.status === 'paused' && (
+                  <>
+                    <button
+                      onClick={async () => {
+                        await clientService.resume(currentClient.id);
+                        const updated = await clientService.getById(currentClient.id);
+                        if (updated) {
+                          setCurrentClient(updated);
+                          onStatusChange?.();
+                        }
+                      }}
+                      className="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors"
+                    >
+                      Возобновить
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (confirm('Переместить клиента в архив?')) {
+                          await clientService.archive(currentClient.id);
+                          const updated = await clientService.getById(currentClient.id);
+                          if (updated) {
+                            setCurrentClient(updated);
+                            onStatusChange?.();
+                          }
+                        }
+                      }}
+                      className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      В архив
+                    </button>
+                  </>
+                )}
+                {currentClient.status === 'archived' && (
+                  <button
+                    onClick={async () => {
+                      await clientService.resume(currentClient.id);
+                      const updated = await clientService.getById(currentClient.id);
+                      if (updated) {
+                        setCurrentClient(updated);
+                        onStatusChange?.();
+                      }
+                    }}
+                    className="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors"
+                  >
+                    Вернуть из архива
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {activeTab === 'schedule' && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Расписание будет реализовано в следующем компоненте
-          </div>
+          <ClientScheduleForm clientId={currentClient.id} />
         )}
 
         {activeTab === 'payments' && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            Платежи будут реализованы в следующем компоненте
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Платежи</h2>
+              <button
+                onClick={() => setShowPaymentForm(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Добавить платёж
+              </button>
+            </div>
+
+            {payments.length === 0 ? (
+              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                Нет платежей. Добавьте первый платёж.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {payments.map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white">
+                          {formatDateTime(payment.paid_at)}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          {payment.amount.toFixed(2)} BYN
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                          {payment.method === 'cash'
+                            ? 'Наличные'
+                            : payment.method === 'card'
+                            ? 'Карта'
+                            : payment.method === 'transfer'
+                            ? 'Перевод'
+                            : 'Другое'}
+                        </div>
+                        {payment.comment && (
+                          <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            {payment.comment}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showPaymentForm && (
+              <PaymentForm
+                clients={[currentClient]}
+                onSave={async (data) => {
+                  const payment = await paymentService.create(currentClient.id, {
+                    paid_at: data.paid_at,
+                    amount: data.amount,
+                    method: data.method,
+                    comment: data.comment,
+                  });
+                  if (data.autoAllocate) {
+                    await paymentService.autoAllocate(payment.id);
+                  }
+                  setShowPaymentForm(false);
+                  await loadPayments();
+                  await loadStats();
+                }}
+                onCancel={() => setShowPaymentForm(false)}
+              />
+            )}
           </div>
         )}
 

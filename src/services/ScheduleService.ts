@@ -118,13 +118,14 @@ export class ScheduleService {
           }
         }
 
-        // Create session
+        // Create session with base_price from rule if set
         const session = await calendarSessionService.createFromTemplate(
           template.client_id,
           {
             date: dateStr,
             start_time: rule.start_time,
             duration_minutes: rule.duration_minutes,
+            price_override: rule.base_price,
           },
           rule.rule_id
         );

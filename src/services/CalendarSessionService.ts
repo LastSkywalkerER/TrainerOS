@@ -5,7 +5,7 @@ import {
   SessionStatus,
 } from '../db/types';
 import { generateId } from '../utils/uuid';
-import { parseISO } from 'date-fns';
+import { format } from 'date-fns';
 
 export class CalendarSessionService {
   async createCustom(
@@ -122,9 +122,12 @@ export class CalendarSessionService {
     dateTo: Date
   ): Promise<CalendarSession[]> {
     const sessions = await db.calendarSessions.toArray();
+    const fromDateStr = format(dateFrom, 'yyyy-MM-dd');
+    const toDateStr = format(dateTo, 'yyyy-MM-dd');
+    
     return sessions.filter((s) => {
-      const sessionDate = parseISO(s.date);
-      return sessionDate >= dateFrom && sessionDate <= dateTo;
+      // Compare date strings for exact date matching
+      return s.date >= fromDateStr && s.date <= toDateStr;
     });
   }
 
