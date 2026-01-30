@@ -373,7 +373,7 @@ export function SessionDetails({
           {(status === 'paid' || status === 'partially_paid') && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
               <div className="text-sm text-yellow-800 dark:text-yellow-200">
-                ⚠️ Это занятие уже оплачено. При изменении или отмене оплата останется привязанной к занятию.
+                ⚠️ Это занятие уже оплачено. При изменении оплата останется привязанной к занятию. При отмене оплата будет освобождена и сможет быть перераспределена на другие занятия.
               </div>
             </div>
           )}
