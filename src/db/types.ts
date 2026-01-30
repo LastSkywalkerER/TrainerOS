@@ -33,6 +33,11 @@ export interface ScheduleTemplate {
   generation_horizon_days: number;
   valid_from?: Date;
   valid_to?: Date;
+  /**
+   * If true, the schedule has no fixed end date and will be automatically extended
+   * month-by-month by moving valid_to forward.
+   */
+  auto_extend?: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -105,6 +110,7 @@ export interface CreateTemplateDto {
   generation_horizon_days?: number;
   valid_from?: Date;
   valid_to?: Date;
+  auto_extend?: boolean;
 }
 
 export interface CreateSessionDto {

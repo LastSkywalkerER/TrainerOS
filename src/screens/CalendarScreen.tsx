@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
 import { clientService } from '../services/ClientService';
+import { scheduleService } from '../services/ScheduleService';
 import { Client } from '../db/types';
 import { formatTime, toISODate } from '../utils/dateUtils';
 import { SessionForm } from '../components/SessionForm';
@@ -54,10 +55,12 @@ export function CalendarScreen() {
       dateTo = endOfDay(currentDate);
     }
 
-    const [allSessions, allClients] = await Promise.all([
-      calendarSessionService.getByDateRange(dateFrom, dateTo),
-      clientService.getAll({ status: 'active' }),
-    ]);
+    const allClients = await clientService.getAll({ status: 'active' });
+
+    // Make sure schedules are generated/extended for the visible range.
+    await scheduleService.ensureSessionsUpTo(dateTo, allClients.map((c) => c.id));
+
+    const allSessions = await calendarSessionService.getByDateRange(dateFrom, dateTo);
     setSessions(allSessions);
     setClients(allClients);
 

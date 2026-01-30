@@ -42,7 +42,8 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
       setTemplatePeriod({
         valid_from: existingTemplate.valid_from ? toISODate(existingTemplate.valid_from) : toISODate(new Date()),
         valid_to: existingTemplate.valid_to ? toISODate(existingTemplate.valid_to) : '',
-        noEndDate: !existingTemplate.valid_to,
+        // Keep checkbox state based on explicit flag (fallback to old behavior for legacy data)
+        noEndDate: existingTemplate.auto_extend ?? !existingTemplate.valid_to,
       });
     } else {
       setTemplate(null);
@@ -130,14 +131,13 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
 
     try {
       const validFrom = templatePeriod.valid_from ? new Date(templatePeriod.valid_from) : new Date();
-      // If noEndDate is true, set validTo to undefined (auto-extend)
-      // If noEndDate is false but valid_to is empty, use end of next month as default
-      // If valid_to is provided, use it (even if it's earlier than current date)
-      const validTo = templatePeriod.noEndDate 
-        ? undefined 
-        : (templatePeriod.valid_to && templatePeriod.valid_to.trim() !== '' 
-          ? new Date(templatePeriod.valid_to) 
-          : getEndOfNextMonth());
+      // If noEndDate is true, we still set valid_to to end of next month,
+      // but mark the template as auto-extend so it will roll forward month-by-month.
+      const validTo = templatePeriod.noEndDate
+        ? getEndOfNextMonth(new Date())
+        : (templatePeriod.valid_to && templatePeriod.valid_to.trim() !== ''
+            ? new Date(templatePeriod.valid_to)
+            : getEndOfNextMonth(new Date()));
 
       if (template) {
         // For update, preserve existing rule_id or generate new ones
@@ -149,6 +149,7 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
           rules: rulesForUpdate,
           valid_from: validFrom,
           valid_to: validTo,
+          auto_extend: templatePeriod.noEndDate,
         });
       } else {
         // For create, remove rule_id as CreateTemplateDto expects rules without rule_id
@@ -157,6 +158,7 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
           rules: rulesForCreate,
           valid_from: validFrom,
           valid_to: validTo,
+          auto_extend: templatePeriod.noEndDate,
         });
       }
       
