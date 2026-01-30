@@ -49,6 +49,7 @@ export interface CalendarSession {
   status: SessionStatus;
   template_rule_id?: string;
   is_custom: boolean;
+  is_edited?: boolean; // True if session was manually edited after creation
   price_override?: number;
   notes?: string;
   created_at: Date;

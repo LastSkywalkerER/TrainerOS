@@ -8,7 +8,7 @@ import {
 import { generateId } from '../utils/uuid';
 import { getWeekday, toISODate, getDatesInRange, isDateInRange, getEndOfNextMonth, shouldAutoExtendSchedule } from '../utils/dateUtils';
 import { calendarSessionService } from './CalendarSessionService';
-import { isBefore, isAfter, startOfDay } from 'date-fns';
+import { isAfter, startOfDay } from 'date-fns';
 
 export class ScheduleService {
   async createTemplate(
@@ -99,18 +99,41 @@ export class ScheduleService {
       }
     }
 
-    // If valid_from was updated to a later date, cancel sessions before that date
-    if (updates.valid_from !== undefined && template.valid_from && updated.valid_from) {
-      if (updated.valid_from > template.valid_from) {
-        await this.cancelSessionsBeforeDate(template.client_id, updated.valid_from);
-      }
-    }
-
     // Regenerate sessions if template changed
     // This will respect the new valid_to and not create sessions after it
     if (updates.rules || updates.generation_horizon_days || updates.valid_from || updates.valid_to) {
-      // Cancel old template-generated sessions before regenerating
-      await this.cancelTemplateSessions(template.client_id);
+      // Determine which date to use for canceling sessions
+      // We want to preserve sessions before the effective valid_from date
+      const effectiveValidFrom = updated.valid_from || template.valid_from;
+      
+      if (updates.valid_from !== undefined && template.valid_from && updated.valid_from) {
+        // valid_from was explicitly changed
+        if (updated.valid_from > template.valid_from) {
+          // Moving forward: only cancel sessions on/after new valid_from, keep sessions before
+          await this.cancelSessionsAfterDate(template.client_id, updated.valid_from);
+        } else if (updated.valid_from < template.valid_from) {
+          // Moving backward: cancel all template sessions to regenerate
+          // When moving backward, sessions before new date are outside schedule and need to be removed
+          await this.cancelTemplateSessions(template.client_id);
+        } else {
+          // Same date: only cancel sessions on/after valid_from to preserve sessions before
+          if (effectiveValidFrom) {
+            await this.cancelSessionsAfterDate(template.client_id, effectiveValidFrom);
+          } else {
+            // No valid_from set: cancel all template sessions
+            await this.cancelTemplateSessions(template.client_id);
+          }
+        }
+      } else {
+        // No valid_from change, but rules or other fields changed
+        // Only cancel sessions >= current valid_from to preserve sessions before
+        if (effectiveValidFrom) {
+          await this.cancelSessionsAfterDate(template.client_id, effectiveValidFrom);
+        } else {
+          // No valid_from set: cancel all template sessions
+          await this.cancelTemplateSessions(template.client_id);
+        }
+      }
       await this.generateSessions(id);
     }
 
@@ -146,6 +169,7 @@ export class ScheduleService {
     // If valid_to is explicitly set by user, respect their choice even if it's in the past
     // We check if valid_to is undefined/null, not just if it's falsy
     // IMPORTANT: Don't save valid_to to DB if it was undefined - keep it undefined to preserve "no end date" checkbox state
+    const today = new Date();
     let effectiveValidTo = template.valid_to;
     if (template.valid_to === undefined || template.valid_to === null) {
       // Use temporary valid_to for generation only (end of next month), but don't save to DB
@@ -156,13 +180,6 @@ export class ScheduleService {
       const newValidTo = getEndOfNextMonth(new Date());
       await db.scheduleTemplates.update(templateId, { valid_to: newValidTo });
       effectiveValidTo = newValidTo;
-    }
-
-    // Check schedule validity period
-    const today = new Date();
-    if (template.valid_from && isBefore(today, startOfDay(template.valid_from))) {
-      // Schedule hasn't started yet
-      return [];
     }
 
     // Check expiration only if valid_to was originally set (not auto-generated)

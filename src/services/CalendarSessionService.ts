@@ -64,9 +64,19 @@ export class CalendarSessionService {
       throw new Error(`CalendarSession with id ${id} not found`);
     }
 
+    // Check if main session parameters are being edited (not just notes or status)
+    const isEditingMainParams = 
+      'date' in updates || 
+      'start_time' in updates || 
+      'duration_minutes' in updates || 
+      'price_override' in updates ||
+      'client_id' in updates;
+
     const updated: CalendarSession = {
       ...session,
       ...updates,
+      // Set is_edited to true if main parameters are being edited
+      is_edited: isEditingMainParams ? true : session.is_edited,
       updated_at: new Date(),
     };
 
