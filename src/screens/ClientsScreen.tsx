@@ -24,15 +24,22 @@ export function ClientsScreen() {
     setClients(allClients);
   }
 
-  const filteredClients = clients.filter((client) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      client.full_name.toLowerCase().includes(query) ||
-      client.phone?.toLowerCase().includes(query) ||
-      client.telegram?.toLowerCase().includes(query)
-    );
-  });
+  const filteredClients = clients
+    .filter((client) => {
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        client.full_name.toLowerCase().includes(query) ||
+        client.phone?.toLowerCase().includes(query) ||
+        client.telegram?.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      // Sort by start_date: oldest first (ascending)
+      const dateA = a.start_date instanceof Date ? a.start_date.getTime() : new Date(a.start_date || 0).getTime();
+      const dateB = b.start_date instanceof Date ? b.start_date.getTime() : new Date(b.start_date || 0).getTime();
+      return dateA - dateB;
+    });
 
   async function handleCreate(clientData: any) {
     await clientService.create(clientData);

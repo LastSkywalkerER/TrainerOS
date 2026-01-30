@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { CalendarScreen } from './screens/CalendarScreen';
 import { PaymentsScreen } from './screens/PaymentsScreen';
 import { SummaryScreen } from './screens/SummaryScreen';
+import { runMigrations } from './db/migrations';
 
 type Tab = 'clients' | 'calendar' | 'payments' | 'summary';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('clients');
+
+  useEffect(() => {
+    runMigrations();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

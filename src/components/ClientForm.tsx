@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Client, CreateClientDto } from '../db/types';
 import { AlertDialog } from './AlertDialog';
+import { toISODate } from '../utils/dateUtils';
 
 interface ClientFormProps {
   client?: Client;
@@ -14,6 +15,7 @@ export function ClientForm({ client, onSave, onCancel }: ClientFormProps) {
     phone: client?.phone || '',
     telegram: client?.telegram || '',
     notes: client?.notes || '',
+    start_date: client?.start_date ? toISODate(client.start_date) : toISODate(new Date()),
   });
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
@@ -23,7 +25,11 @@ export function ClientForm({ client, onSave, onCancel }: ClientFormProps) {
       setAlertMessage('Имя обязательно для заполнения');
       return;
     }
-    onSave(formData);
+    const submitData = {
+      ...formData,
+      start_date: formData.start_date ? new Date(formData.start_date) : new Date(),
+    };
+    onSave(submitData);
   }
 
   return (
@@ -67,6 +73,18 @@ export function ClientForm({ client, onSave, onCancel }: ClientFormProps) {
               type="text"
               value={formData.telegram}
               onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Дата начала занятий
+            </label>
+            <input
+              type="date"
+              value={formData.start_date}
+              onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           </div>

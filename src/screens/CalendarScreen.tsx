@@ -24,6 +24,7 @@ import {
   startOfDay,
   endOfDay,
 } from 'date-fns';
+import { ru } from 'date-fns/locale';
 
 export function CalendarScreen() {
   const [view, setView] = useState<'month' | 'week' | 'day'>('month');
@@ -127,7 +128,7 @@ export function CalendarScreen() {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           {view === 'month'
-            ? format(currentDate, 'MMMM yyyy')
+            ? format(currentDate, 'MMMM yyyy', { locale: ru })
             : view === 'week'
             ? `Неделя ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'dd.MM')} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}`
             : format(currentDate, 'dd.MM.yyyy')}
@@ -336,7 +337,7 @@ export function CalendarScreen() {
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="text-lg font-semibold text-gray-900 dark:text-white">
-              {format(currentDate, 'EEEE, d MMMM yyyy')}
+              {format(currentDate, 'EEEE, d MMMM yyyy', { locale: ru })}
             </div>
           </div>
           <div className="max-h-[calc(100vh-300px)] overflow-y-auto">

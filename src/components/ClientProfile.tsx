@@ -11,6 +11,7 @@ import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
 import { scheduleService } from '../services/ScheduleService';
 import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 
 interface ClientProfileProps {
   client: Client;
@@ -360,7 +361,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                   {monthlyStats.map((monthStat) => (
                     <div key={monthStat.month.toISOString()} className="border-b border-gray-200 dark:border-gray-700 pb-3 last:border-b-0 last:pb-0">
                       <div className="font-semibold text-gray-900 dark:text-white mb-2">
-                        {format(monthStat.month, 'MMMM yyyy')}
+                        {format(monthStat.month, 'MMMM yyyy', { locale: ru })}
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>

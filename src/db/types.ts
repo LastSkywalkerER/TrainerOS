@@ -9,6 +9,7 @@ export interface Client {
   telegram?: string;
   notes?: string;
   status: ClientStatus;
+  start_date: Date;
   pause_from?: Date;
   pause_to?: Date;
   archive_date?: Date;
@@ -97,6 +98,7 @@ export interface CreateClientDto {
   phone?: string;
   telegram?: string;
   notes?: string;
+  start_date?: Date;
 }
 
 export interface CreateTemplateDto {

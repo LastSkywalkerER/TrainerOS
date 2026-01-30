@@ -12,6 +12,7 @@ export class ClientService {
       telegram: clientData.telegram,
       notes: clientData.notes,
       status: 'active',
+      start_date: clientData.start_date || now,
       created_at: now,
       updated_at: now,
     };
