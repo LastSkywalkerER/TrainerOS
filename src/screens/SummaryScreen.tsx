@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Client } from '../db/types';
 import { clientService } from '../services/ClientService';
 import { analyticsService } from '../services/AnalyticsService';
 import { MonthlyStats } from '../db/types';
 
 export function SummaryScreen() {
+  const navigate = useNavigate();
   const [monthStats, setMonthStats] = useState<MonthlyStats | null>(null);
   const [clientsWithDebt, setClientsWithDebt] = useState<Array<{ client: Client; debt: number }>>([]);
 
@@ -66,7 +68,11 @@ export function SummaryScreen() {
             {clientsWithDebt.map(({ client, debt }) => (
               <div
                 key={client.id}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow p-4"
+                onClick={() => navigate('/clients', { 
+                  state: { clientId: client.id, openTab: 'stats' },
+                  replace: false 
+                })}
+                className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 <div className="flex justify-between items-center">
                   <div>

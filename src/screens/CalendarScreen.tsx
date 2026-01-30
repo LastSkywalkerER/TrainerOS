@@ -548,11 +548,6 @@ export function CalendarScreen() {
             handleSessionSelect(null);
             await loadData();
           }}
-          onComplete={async () => {
-            await calendarSessionService.complete(selectedSession.id);
-            handleSessionSelect(null);
-            await loadData();
-          }}
           onNotesSaved={async (updatedSession) => {
             // Update selected session with new notes
             setSelectedSession(updatedSession);

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Client } from '../db/types';
 import { clientService } from '../services/ClientService';
 import { ClientCard } from '../components/ClientCard';
@@ -6,16 +7,33 @@ import { ClientForm } from '../components/ClientForm';
 import { ClientProfile } from '../components/ClientProfile';
 
 export function ClientsScreen() {
+  const location = useLocation();
   const [clients, setClients] = useState<Client[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'archived'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [initialTab, setInitialTab] = useState<'info' | 'schedule' | 'payments' | 'stats' | undefined>(undefined);
 
   useEffect(() => {
     loadClients();
   }, [filter]);
+
+  // Handle navigation from other screens (e.g., SummaryScreen)
+  useEffect(() => {
+    const state = location.state as { clientId?: string; openTab?: 'info' | 'schedule' | 'payments' | 'stats' } | null;
+    if (state?.clientId && !selectedClient) {
+      clientService.getById(state.clientId).then((client) => {
+        if (client) {
+          setSelectedClient(client);
+          if (state.openTab) {
+            setInitialTab(state.openTab);
+          }
+        }
+      });
+    }
+  }, [location.state, selectedClient]);
 
   async function loadClients() {
     const allClients = await clientService.getAll(
@@ -81,7 +99,10 @@ export function ClientsScreen() {
     return (
       <ClientProfile
         client={selectedClient}
-        onBack={() => setSelectedClient(null)}
+        onBack={() => {
+          setSelectedClient(null);
+          setInitialTab(undefined);
+        }}
         onEdit={() => setEditingClient(selectedClient)}
         onStatusChange={async () => {
           // Reload client data after status change
@@ -91,6 +112,7 @@ export function ClientsScreen() {
           }
           await loadClients();
         }}
+        initialTab={initialTab}
       />
     );
   }

@@ -1,5 +1,5 @@
 import { Payment, Client } from '../db/types';
-import { formatDateTime } from '../utils/dateUtils';
+import { formatDate } from '../utils/dateUtils';
 
 interface PaymentDetailsProps {
   payment: Payment;
@@ -8,16 +8,16 @@ interface PaymentDetailsProps {
 }
 
 export function PaymentDetails({ payment, client, onClose }: PaymentDetailsProps) {
-  const methodLabels = {
-    cash: 'Наличные',
-    card: 'Карта',
-    transfer: 'Перевод',
-    other: 'Другое',
-  };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-between items-start mb-4">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Платёж</h2>
           <button onClick={onClose} className="text-gray-500 dark:text-gray-400">
@@ -34,21 +34,14 @@ export function PaymentDetails({ payment, client, onClose }: PaymentDetailsProps
           </div>
 
           <div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Дата и время</div>
-            <div className="font-semibold text-gray-900 dark:text-white">{formatDateTime(payment.paid_at)}</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Дата</div>
+            <div className="font-semibold text-gray-900 dark:text-white">{formatDate(payment.paid_at)}</div>
           </div>
 
           <div>
             <div className="text-sm text-gray-600 dark:text-gray-400">Сумма</div>
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
               {payment.amount.toFixed(2)} BYN
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Метод оплаты</div>
-            <div className="font-semibold text-gray-900 dark:text-white">
-              {methodLabels[payment.method]}
             </div>
           </div>
 

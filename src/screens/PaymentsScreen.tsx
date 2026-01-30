@@ -87,9 +87,6 @@ export function PaymentsScreen() {
                         <div className="font-semibold text-gray-900 dark:text-white">
                           {client?.full_name || 'Неизвестно'}
                         </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {payment.paid_at.toTimeString().slice(0, 5)} • {payment.method === 'cash' ? 'Наличные' : payment.method === 'card' ? 'Карта' : payment.method === 'transfer' ? 'Перевод' : 'Другое'}
-                        </div>
                       </div>
                       <div className="text-lg font-bold text-green-600 dark:text-green-400">
                         {payment.amount.toFixed(2)} BYN

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Client, Payment, ClientMonthlyStats } from '../db/types';
 import { analyticsService } from '../services/AnalyticsService';
 import { ClientStats } from '../db/types';
-import { formatDate, formatDateTime } from '../utils/dateUtils';
+import { formatDate } from '../utils/dateUtils';
 import { ClientScheduleForm } from './ClientScheduleForm';
 import { PaymentForm } from './PaymentForm';
 import { PauseDialog } from './PauseDialog';
@@ -18,12 +18,13 @@ interface ClientProfileProps {
   onBack: () => void;
   onEdit: () => void;
   onStatusChange?: () => void;
+  initialTab?: Tab;
 }
 
 type Tab = 'info' | 'schedule' | 'payments' | 'stats';
 
-export function ClientProfile({ client, onBack, onEdit, onStatusChange }: ClientProfileProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('info');
+export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialTab = 'info' }: ClientProfileProps) {
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<ClientMonthlyStats[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -35,6 +36,12 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
   useEffect(() => {
     setCurrentClient(client);
   }, [client]);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     loadStats();
@@ -239,19 +246,10 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white">
-                          {formatDateTime(payment.paid_at)}
+                          {formatDate(payment.paid_at)}
                         </div>
                         <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                           {payment.amount.toFixed(2)} BYN
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                          {payment.method === 'cash'
-                            ? 'Наличные'
-                            : payment.method === 'card'
-                            ? 'Карта'
-                            : payment.method === 'transfer'
-                            ? 'Перевод'
-                            : 'Другое'}
                         </div>
                         {payment.comment && (
                           <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Client, CreatePaymentDto, PaymentMethod } from '../db/types';
+import { Client, CreatePaymentDto } from '../db/types';
 import { toISODate } from '../utils/dateUtils';
 import { AlertDialog } from './AlertDialog';
 
@@ -24,9 +24,7 @@ export function PaymentForm({ clients, payment, defaultClientId, onSave, onCance
   const [formData, setFormData] = useState({
     client_id: getDefaultClientId(),
     paid_at: payment ? toISODate(payment.paid_at) : toISODate(now),
-    paid_time: payment ? payment.paid_at.toTimeString().slice(0, 5) : now.toTimeString().slice(0, 5),
     amount: payment?.amount || 0,
-    method: (payment?.method || 'cash') as PaymentMethod,
     comment: payment?.comment || '',
     autoAllocate: true,
   });
@@ -43,23 +41,28 @@ export function PaymentForm({ clients, payment, defaultClientId, onSave, onCance
       return;
     }
 
-    const [hours, minutes] = formData.paid_time.split(':').map(Number);
     const paidAt = new Date(formData.paid_at);
-    paidAt.setHours(hours, minutes, 0, 0);
+    paidAt.setHours(0, 0, 0, 0);
 
     onSave({
       client_id: formData.client_id,
       paid_at: paidAt,
       amount: formData.amount,
-      method: formData.method,
+      method: 'cash', // Default method, not shown in UI
       comment: formData.comment,
       autoAllocate: formData.autoAllocate,
     });
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      onClick={onCancel}
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
           {payment ? 'Редактировать платёж' : 'Новый платёж'}
         </h2>
@@ -99,19 +102,6 @@ export function PaymentForm({ clients, payment, defaultClientId, onSave, onCance
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Время *
-            </label>
-            <input
-              type="time"
-              required
-              value={formData.paid_time}
-              onChange={(e) => setFormData({ ...formData, paid_time: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Сумма (BYN) *
             </label>
             <input
@@ -123,23 +113,6 @@ export function PaymentForm({ clients, payment, defaultClientId, onSave, onCance
               onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Метод оплаты *
-            </label>
-            <select
-              required
-              value={formData.method}
-              onChange={(e) => setFormData({ ...formData, method: e.target.value as PaymentMethod })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="cash">Наличные</option>
-              <option value="card">Карта</option>
-              <option value="transfer">Перевод</option>
-              <option value="other">Другое</option>
-            </select>
           </div>
 
           <div>

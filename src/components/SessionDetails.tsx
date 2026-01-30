@@ -15,7 +15,6 @@ interface SessionDetailsProps {
   onClose: () => void;
   onEdit: () => void;
   onCancel: () => void;
-  onComplete: () => void;
   onNotesSaved?: (updatedSession: CalendarSession) => void;
 }
 
@@ -27,7 +26,6 @@ export function SessionDetails({
   onClose,
   onEdit,
   onCancel,
-  onComplete,
   onNotesSaved,
 }: SessionDetailsProps) {
   const [activeTab, setActiveTab] = useState<Tab>('notes');
@@ -144,8 +142,14 @@ export function SessionDetails({
 
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-between items-start mb-4">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Занятие</h2>
           <button onClick={onClose} className="text-gray-500 dark:text-gray-400">
@@ -347,13 +351,6 @@ export function SessionDetails({
           </div>
 
           <div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Статус занятия</div>
-            <span className="px-3 py-1 rounded text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-              {session.status === 'planned' ? 'Запланировано' : session.status === 'completed' ? 'Завершено' : 'Отменено'}
-            </span>
-          </div>
-
-          <div>
             <div className="text-sm text-gray-600 dark:text-gray-400">Статус оплаты</div>
             <span className={`px-3 py-1 rounded text-sm ${statusColors[status]}`}>
               {statusLabels[status]}
@@ -401,12 +398,6 @@ export function SessionDetails({
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
                   Отменить
-                </button>
-                <button
-                  onClick={onComplete}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                >
-                  Завершить
                 </button>
               </>
             )}
