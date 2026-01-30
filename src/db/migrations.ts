@@ -13,8 +13,8 @@ async function migrateToVersion3() {
   // Set start_date for existing clients to their created_at date
   const clients = await db.clients.toArray();
   const updates = clients
-    .filter((client: any) => !client.start_date)
-    .map((client: any) => ({
+    .filter((client: Client) => !client.start_date)
+    .map((client: Client) => ({
       ...client,
       start_date: client.created_at,
     }));
