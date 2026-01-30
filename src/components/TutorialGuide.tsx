@@ -160,7 +160,9 @@ export function TutorialGuide({ steps, isActive, onComplete, onSkip }: TutorialG
     }
 
     // Ensure tooltip stays within viewport
-    tooltipStyle.left = Math.max(16, Math.min(tooltipStyle.left || 0, window.innerWidth - tooltipWidth - 16));
+    if (typeof tooltipStyle.left === 'number') {
+      tooltipStyle.left = Math.max(16, Math.min(tooltipStyle.left, window.innerWidth - tooltipWidth - 16));
+    }
   }
 
   return (

@@ -28,7 +28,7 @@ interface ClientProfileProps {
 type Tab = 'info' | 'schedule' | 'payments' | 'stats';
 
 export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialTab = 'info', showTutorialOnMount = false }: ClientProfileProps) {
-  const { getTriggeredPage, clearTrigger, triggerTutorial } = useTutorial();
+  const { getTriggeredPage, clearTrigger } = useTutorial();
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<ClientMonthlyStats[]>([]);
