@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Client, Payment, ClientMonthlyStats } from '../db/types';
 import { analyticsService } from '../services/AnalyticsService';
 import { ClientStats } from '../db/types';
@@ -35,6 +35,21 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
     setCurrentClient(client);
   }, [client]);
 
+  const loadStats = useCallback(async () => {
+    const clientStats = await analyticsService.getClientStats(currentClient.id);
+    setStats(clientStats);
+  }, [currentClient.id]);
+
+  const loadMonthlyStats = useCallback(async () => {
+    const monthly = await analyticsService.getClientMonthlyStats(currentClient.id);
+    setMonthlyStats(monthly);
+  }, [currentClient.id]);
+
+  const loadPayments = useCallback(async () => {
+    const clientPayments = await paymentService.getAllByClient(currentClient.id);
+    setPayments(clientPayments);
+  }, [currentClient.id]);
+
   useEffect(() => {
     loadStats();
     if (activeTab === 'payments') {
@@ -43,22 +58,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
     if (activeTab === 'stats') {
       loadMonthlyStats();
     }
-  }, [currentClient.id, activeTab]);
-
-  async function loadStats() {
-    const clientStats = await analyticsService.getClientStats(currentClient.id);
-    setStats(clientStats);
-  }
-
-  async function loadMonthlyStats() {
-    const monthly = await analyticsService.getClientMonthlyStats(currentClient.id);
-    setMonthlyStats(monthly);
-  }
-
-  async function loadPayments() {
-    const clientPayments = await paymentService.getAllByClient(currentClient.id);
-    setPayments(clientPayments);
-  }
+  }, [activeTab, loadMonthlyStats, loadPayments, loadStats]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

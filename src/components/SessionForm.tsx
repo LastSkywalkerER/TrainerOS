@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Client, CreateSessionDto, CalendarSession } from '../db/types';
 import { toISODate } from '../utils/dateUtils';
 import { calendarSessionService } from '../services/CalendarSessionService';
 
 interface SessionFormProps {
   clients: Client[];
-  session?: any;
+  session?: CalendarSession;
   onSave: (data: CreateSessionDto & { client_id: string }) => void;
   onCancel: () => void;
 }
@@ -21,11 +21,7 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
   });
   const [conflicts, setConflicts] = useState<CalendarSession[]>([]);
 
-  useEffect(() => {
-    checkConflicts();
-  }, [formData.date, formData.start_time, formData.client_id]);
-
-  async function checkConflicts() {
+  const checkConflicts = useCallback(async () => {
     if (!formData.date || !formData.start_time) return;
     const conflictsList = await calendarSessionService.checkConflicts(
       formData.date,
@@ -33,7 +29,11 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
       session?.id
     );
     setConflicts(conflictsList);
-  }
+  }, [formData.date, formData.start_time, session?.id]);
+
+  useEffect(() => {
+    checkConflicts();
+  }, [checkConflicts]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

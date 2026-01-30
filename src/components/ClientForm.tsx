@@ -3,7 +3,7 @@ import { Client, CreateClientDto } from '../db/types';
 
 interface ClientFormProps {
   client?: Client;
-  onSave: (data: CreateClientDto | Partial<Client>) => void;
+  onSave: (data: CreateClientDto) => void;
   onCancel: () => void;
 }
 

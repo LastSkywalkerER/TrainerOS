@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
 import { clientService } from '../services/ClientService';
@@ -35,11 +35,7 @@ export function CalendarScreen() {
   const [showForm, setShowForm] = useState(false);
   const [editingSession, setEditingSession] = useState<CalendarSession | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [currentDate, view]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     let dateFrom: Date;
     let dateTo: Date;
 
@@ -75,7 +71,11 @@ export function CalendarScreen() {
       })
     );
     setSessionStatuses(statusMap);
-  }
+  }, [currentDate, view]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -403,7 +403,7 @@ export function CalendarScreen() {
       {showForm && (
         <SessionForm
           clients={clients}
-          session={editingSession}
+          session={editingSession ?? undefined}
           onSave={async (data) => {
             if (editingSession) {
               await calendarSessionService.update(editingSession.id, data);

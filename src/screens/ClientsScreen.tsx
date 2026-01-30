@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Client } from '../db/types';
+import { useState, useEffect, useCallback } from 'react';
+import { Client, CreateClientDto } from '../db/types';
 import { clientService } from '../services/ClientService';
 import { ClientCard } from '../components/ClientCard';
 import { ClientForm } from '../components/ClientForm';
@@ -13,16 +13,16 @@ export function ClientsScreen() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
 
-  useEffect(() => {
-    loadClients();
-  }, [filter]);
-
-  async function loadClients() {
+  const loadClients = useCallback(async () => {
     const allClients = await clientService.getAll(
       filter === 'all' ? undefined : { status: filter }
     );
     setClients(allClients);
-  }
+  }, [filter]);
+
+  useEffect(() => {
+    loadClients();
+  }, [loadClients]);
 
   const filteredClients = clients.filter((client) => {
     if (!searchQuery) return true;
@@ -34,7 +34,7 @@ export function ClientsScreen() {
     );
   });
 
-  async function handleCreate(clientData: any) {
+  async function handleCreate(clientData: CreateClientDto) {
     await clientService.create(clientData);
     setShowForm(false);
     await loadClients();

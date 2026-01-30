@@ -97,7 +97,7 @@ export class CalendarSessionService {
     clientId: string,
     filters?: { dateFrom?: Date; dateTo?: Date }
   ): Promise<CalendarSession[]> {
-    let query = db.calendarSessions.where('client_id').equals(clientId);
+    const query = db.calendarSessions.where('client_id').equals(clientId);
 
     if (filters?.dateFrom || filters?.dateTo) {
       const sessions = await query.toArray();

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CalendarSession, Client } from '../db/types';
 import { formatDate, formatTime } from '../utils/dateUtils';
 import { calculateSessionStatusWithBalance, getEffectiveAllocatedAmount, calculateSessionPrice } from '../utils/calculations';
@@ -24,11 +24,7 @@ export function SessionDetails({
   const [allocated, setAllocated] = useState(0);
   const [price, setPrice] = useState(0);
 
-  useEffect(() => {
-    loadStatus();
-  }, [session.id]);
-
-  async function loadStatus() {
+  const loadStatus = useCallback(async () => {
     const [sessionStatus, effectiveAllocated, sessionPrice] = await Promise.all([
       calculateSessionStatusWithBalance(session.id, session.client_id),
       getEffectiveAllocatedAmount(session.id, session.client_id),
@@ -37,7 +33,11 @@ export function SessionDetails({
     setStatus(sessionStatus);
     setAllocated(effectiveAllocated);
     setPrice(sessionPrice);
-  }
+  }, [session.client_id, session.id]);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
 
   const statusColors = {
     paid: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',

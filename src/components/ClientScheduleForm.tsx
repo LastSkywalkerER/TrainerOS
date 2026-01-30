@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ScheduleTemplate, ScheduleRule } from '../db/types';
 import { scheduleService } from '../services/ScheduleService';
 import { generateId } from '../utils/uuid';
@@ -30,11 +30,7 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     noEndDate: true,
   });
 
-  useEffect(() => {
-    loadTemplate();
-  }, [clientId]);
-
-  async function loadTemplate() {
+  const loadTemplate = useCallback(async () => {
     const existingTemplate = await scheduleService.getTemplateByClient(clientId);
     if (existingTemplate) {
       setTemplate(existingTemplate);
@@ -54,7 +50,11 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
         noEndDate: true,
       });
     }
-  }
+  }, [clientId]);
+
+  useEffect(() => {
+    loadTemplate();
+  }, [loadTemplate]);
 
   function handleAddRule() {
     const newRule: ScheduleRule = {
@@ -153,7 +153,8 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
         });
       } else {
         // For create, remove rule_id as CreateTemplateDto expects rules without rule_id
-        const rulesForCreate = rules.map(({ rule_id, ...rule }) => rule);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- omit rule_id for CreateTemplateDto
+        const rulesForCreate = rules.map(({ rule_id: _ruleId, ...rule }) => rule);
         await scheduleService.createTemplate(clientId, { 
           rules: rulesForCreate,
           valid_from: validFrom,

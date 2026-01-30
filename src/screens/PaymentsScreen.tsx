@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Payment, Client } from '../db/types';
+import { Payment, Client, CreatePaymentDto } from '../db/types';
 import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
 import { formatDate } from '../utils/dateUtils';
@@ -41,7 +41,9 @@ export function PaymentsScreen() {
     return acc;
   }, {} as Record<string, Payment[]>);
 
-  async function handleCreate(paymentData: any) {
+  async function handleCreate(
+    paymentData: CreatePaymentDto & { client_id: string; autoAllocate: boolean }
+  ) {
     const payment = await paymentService.create(paymentData.client_id, paymentData);
     if (paymentData.autoAllocate) {
       await paymentService.autoAllocate(payment.id);

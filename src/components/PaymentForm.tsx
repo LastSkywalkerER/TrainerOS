@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Client, CreatePaymentDto, PaymentMethod } from '../db/types';
+import { Client, CreatePaymentDto, Payment, PaymentMethod } from '../db/types';
 import { toISODate } from '../utils/dateUtils';
 
 interface PaymentFormProps {
   clients: Client[];
-  payment?: any;
+  payment?: Payment;
   onSave: (data: CreatePaymentDto & { client_id: string; autoAllocate: boolean }) => void;
   onCancel: () => void;
 }

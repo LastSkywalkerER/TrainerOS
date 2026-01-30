@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Client } from '../db/types';
 import { analyticsService } from '../services/AnalyticsService';
 import { formatDate } from '../utils/dateUtils';
@@ -14,18 +14,20 @@ export function ClientCard({ client, onClick, onEdit }: ClientCardProps) {
   const [balance, setBalance] = useState<number>(0);
   const [nextSession, setNextSession] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadStats();
-  }, [client.id]);
-
-  async function loadStats() {
+  const loadStats = useCallback(async () => {
     const stats = await analyticsService.getClientStats(client.id);
     setDebt(stats.total_debt);
     setBalance(stats.balance);
     if (stats.next_unpaid_session) {
       setNextSession(stats.next_unpaid_session.date);
+    } else {
+      setNextSession(null);
     }
-  }
+  }, [client.id]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   const statusColors = {
     active: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',

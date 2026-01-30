@@ -4,7 +4,9 @@ export function validateEmail(email: string): boolean {
 }
 
 export function validatePhone(phone: string): boolean {
-  const re = /^[\d\s\-\+\(\)]+$/;
+  // Allow digits, spaces and common phone punctuation.
+  // Note: inside a character class, most symbols don't need escaping.
+  const re = /^[\d\s()+-]+$/;
   return re.test(phone) && phone.replace(/\D/g, '').length >= 10;
 }
 
