@@ -92,10 +92,10 @@ export class ScheduleService {
       const newTimestamp = newValidTo ? newValidTo.getTime() : null;
       
       // If valid_to was set to an earlier date, cancel sessions on/after the new date
-      if (oldTimestamp && newTimestamp && newTimestamp < oldTimestamp) {
+      if (oldTimestamp && newTimestamp && newTimestamp < oldTimestamp && newValidTo) {
         // New date is earlier - cancel sessions on or after new date
         await this.cancelSessionsAfterDate(template.client_id, newValidTo);
-      } else if (!oldTimestamp && newTimestamp) {
+      } else if (!oldTimestamp && newTimestamp && newValidTo) {
         // valid_to was set for the first time - cancel sessions on or after that date
         await this.cancelSessionsAfterDate(template.client_id, newValidTo);
       }

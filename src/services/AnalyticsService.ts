@@ -5,7 +5,7 @@ import {
   ClientMonthlyStats,
   CalendarSession,
 } from '../db/types';
-import { getAllocatedAmount, calculateSessionPrice, getEffectiveAllocatedAmount, calculateSessionStatusWithBalance } from '../utils/calculations';
+import { calculateSessionPrice, getEffectiveAllocatedAmount } from '../utils/calculations';
 import { parseISO, startOfMonth, endOfMonth, isWithinInterval, format } from 'date-fns';
 
 export class AnalyticsService {
@@ -250,7 +250,7 @@ export class AnalyticsService {
     // Calculate stats for each month using effective allocated amounts (with balance distribution)
     const result: ClientMonthlyStats[] = [];
 
-    for (const [monthKey, data] of monthlyData.entries()) {
+    for (const [, data] of monthlyData.entries()) {
       let total_sessions = 0;
       let paid_sessions = 0;
       let unpaid_sessions = 0;
@@ -278,10 +278,6 @@ export class AnalyticsService {
       }
 
       const total_paid = data.payments.reduce((sum, p) => sum + p.amount, 0);
-      const total_allocated = data.allocations.reduce(
-        (sum, a) => sum + a.allocated_amount,
-        0
-      );
 
       result.push({
         month: data.month,

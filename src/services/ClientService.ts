@@ -73,7 +73,7 @@ export class ClientService {
 
   async delete(id: string): Promise<void> {
     // Soft delete - archive instead
-    await this.archive(id);
+    await this.archive(id, new Date());
   }
 
   async hardDelete(id: string): Promise<void> {
