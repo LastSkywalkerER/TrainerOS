@@ -6,6 +6,7 @@ import { Client } from '../db/types';
 import { formatTime, toISODate } from '../utils/dateUtils';
 import { SessionForm } from '../components/SessionForm';
 import { SessionDetails } from '../components/SessionDetails';
+import { calculateSessionStatusWithBalance, PaymentStatus } from '../utils/calculations';
 import {
   startOfMonth,
   endOfMonth,
@@ -28,6 +29,7 @@ export function CalendarScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [sessions, setSessions] = useState<CalendarSession[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [sessionStatuses, setSessionStatuses] = useState<Map<string, PaymentStatus>>(new Map());
   const [selectedSession, setSelectedSession] = useState<CalendarSession | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingSession, setEditingSession] = useState<CalendarSession | null>(null);
@@ -58,6 +60,18 @@ export function CalendarScreen() {
     ]);
     setSessions(allSessions);
     setClients(allClients);
+
+    // Load payment statuses for all sessions (with balance distribution)
+    const statusMap = new Map<string, PaymentStatus>();
+    await Promise.all(
+      allSessions.map(async (session) => {
+        if (session.status !== 'canceled') {
+          const status = await calculateSessionStatusWithBalance(session.id, session.client_id);
+          statusMap.set(session.id, status);
+        }
+      })
+    );
+    setSessionStatuses(statusMap);
   }
 
   const monthStart = startOfMonth(currentDate);
@@ -67,6 +81,22 @@ export function CalendarScreen() {
   function getSessionsForDate(date: Date): CalendarSession[] {
     const dateStr = toISODate(date);
     return sessions.filter((s) => s.date === dateStr && s.status !== 'canceled');
+  }
+
+  function getSessionColorClasses(status: PaymentStatus | undefined): string {
+    if (!status) {
+      return 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
+    }
+    switch (status) {
+      case 'paid':
+        return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
+      case 'unpaid':
+        return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200';
+      case 'partially_paid':
+        return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200';
+      default:
+        return 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
+    }
   }
 
 
@@ -166,11 +196,13 @@ export function CalendarScreen() {
                   <div className="space-y-1">
                     {daySessions.slice(0, 3).map((session) => {
                       const client = clients.find((c) => c.id === session.client_id);
+                      const paymentStatus = sessionStatuses.get(session.id);
+                      const colorClasses = getSessionColorClasses(paymentStatus);
                       return (
                         <div
                           key={session.id}
                           onClick={() => setSelectedSession(session)}
-                          className="text-xs p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 truncate"
+                          className={`text-xs p-1 rounded ${colorClasses} cursor-pointer hover:opacity-80 truncate`}
                         >
                           {formatTime(session.start_time)} {client?.full_name}
                         </div>
@@ -239,15 +271,17 @@ export function CalendarScreen() {
                   <div className="space-y-2">
                     {daySessions.map((session) => {
                       const client = clients.find((c) => c.id === session.client_id);
+                      const paymentStatus = sessionStatuses.get(session.id);
+                      const colorClasses = getSessionColorClasses(paymentStatus);
                       return (
                         <div
                           key={session.id}
                           onClick={() => setSelectedSession(session)}
-                          className="p-2 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
+                          className={`p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80`}
                         >
                           <div className="text-xs font-semibold">{formatTime(session.start_time)}</div>
                           <div className="text-xs">{client?.full_name}</div>
-                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                          <div className="text-xs opacity-75">
                             {session.duration_minutes} мин
                           </div>
                         </div>
@@ -311,6 +345,8 @@ export function CalendarScreen() {
                           <div className="flex-1">
                             {hourSessions.map((session) => {
                               const client = clients.find((c) => c.id === session.client_id);
+                              const paymentStatus = sessionStatuses.get(session.id);
+                              const colorClasses = getSessionColorClasses(paymentStatus);
                               const [hours, minutes] = session.start_time.split(':').map(Number);
                               const endMinutes = minutes + session.duration_minutes;
                               const endHours = hours + Math.floor(endMinutes / 60);
@@ -321,13 +357,13 @@ export function CalendarScreen() {
                                 <div
                                   key={session.id}
                                   onClick={() => setSelectedSession(session)}
-                                  className="mb-2 p-2 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
+                                  className={`mb-2 p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80`}
                                 >
                                   <div className="text-sm font-semibold">
                                     {formatTime(session.start_time)} - {endTime}
                                   </div>
                                   <div className="text-sm">{client?.full_name}</div>
-                                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                                  <div className="text-xs opacity-75">
                                     {session.duration_minutes} минут
                                   </div>
                                 </div>

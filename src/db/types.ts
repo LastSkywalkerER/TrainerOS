@@ -142,7 +142,8 @@ export interface ClientStats {
   unpaid_sessions: number;
   partially_paid_sessions: number;
   total_paid: number;
-  total_allocated: number;
+  total_allocated: number; // Real allocated amount
+  total_effective_allocated: number; // Effective allocated with balance distribution
   total_debt: number;
   balance: number;
   next_unpaid_session: CalendarSession | null;
@@ -154,4 +155,15 @@ export interface MonthlyStats {
   total_sessions: number;
   total_payments: number;
   total_debt: number;
+}
+
+export interface ClientMonthlyStats {
+  month: Date;
+  total_sessions: number;
+  paid_sessions: number;
+  unpaid_sessions: number;
+  partially_paid_sessions: number;
+  total_debt: number;
+  total_paid: number;
+  total_allocated: number;
 }

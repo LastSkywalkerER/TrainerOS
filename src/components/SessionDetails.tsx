@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CalendarSession, Client } from '../db/types';
 import { formatDate, formatTime } from '../utils/dateUtils';
-import { calculateSessionStatus, getAllocatedAmount, calculateSessionPrice } from '../utils/calculations';
+import { calculateSessionStatusWithBalance, getEffectiveAllocatedAmount, calculateSessionPrice } from '../utils/calculations';
 
 interface SessionDetailsProps {
   session: CalendarSession;
@@ -29,13 +29,13 @@ export function SessionDetails({
   }, [session.id]);
 
   async function loadStatus() {
-    const [sessionStatus, allocatedAmount, sessionPrice] = await Promise.all([
-      calculateSessionStatus(session.id),
-      getAllocatedAmount(session.id),
+    const [sessionStatus, effectiveAllocated, sessionPrice] = await Promise.all([
+      calculateSessionStatusWithBalance(session.id, session.client_id),
+      getEffectiveAllocatedAmount(session.id, session.client_id),
       calculateSessionPrice(session.client_id, session.id),
     ]);
     setStatus(sessionStatus);
-    setAllocated(allocatedAmount);
+    setAllocated(effectiveAllocated);
     setPrice(sessionPrice);
   }
 

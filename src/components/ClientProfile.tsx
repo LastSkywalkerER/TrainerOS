@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Client, Payment } from '../db/types';
+import { Client, Payment, ClientMonthlyStats } from '../db/types';
 import { analyticsService } from '../services/AnalyticsService';
 import { ClientStats } from '../db/types';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
@@ -10,6 +10,7 @@ import { ArchiveDialog } from './ArchiveDialog';
 import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
 import { scheduleService } from '../services/ScheduleService';
+import { format } from 'date-fns';
 
 interface ClientProfileProps {
   client: Client;
@@ -23,6 +24,7 @@ type Tab = 'info' | 'schedule' | 'payments' | 'stats';
 export function ClientProfile({ client, onBack, onEdit, onStatusChange }: ClientProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('info');
   const [stats, setStats] = useState<ClientStats | null>(null);
+  const [monthlyStats, setMonthlyStats] = useState<ClientMonthlyStats[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showPauseDialog, setShowPauseDialog] = useState(false);
@@ -38,11 +40,19 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
     if (activeTab === 'payments') {
       loadPayments();
     }
+    if (activeTab === 'stats') {
+      loadMonthlyStats();
+    }
   }, [currentClient.id, activeTab]);
 
   async function loadStats() {
     const clientStats = await analyticsService.getClientStats(currentClient.id);
     setStats(clientStats);
+  }
+
+  async function loadMonthlyStats() {
+    const monthly = await analyticsService.getClientMonthlyStats(currentClient.id);
+    setMonthlyStats(monthly);
   }
 
   async function loadPayments() {
@@ -304,12 +314,19 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Распределено:</span>
-                  <span className="font-semibold text-gray-900 dark:text-white">{stats.total_allocated.toFixed(2)} BYN</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{stats.total_effective_allocated.toFixed(2)} BYN</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Долг:</span>
-                  <span className="font-semibold text-red-600 dark:text-red-400">{stats.total_debt.toFixed(2)} BYN</span>
-                </div>
+                {stats.total_effective_allocated !== stats.total_allocated && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500 dark:text-gray-500">(включая баланс: {stats.total_allocated.toFixed(2)} BYN реально распределено)</span>
+                  </div>
+                )}
+                {stats.total_debt > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Долг:</span>
+                    <span className="font-semibold text-red-600 dark:text-red-400">{stats.total_debt.toFixed(2)} BYN</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Баланс:</span>
                   <span className={`font-semibold ${stats.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -324,6 +341,54 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange }: Client
                 <h2 className="font-semibold mb-2 text-gray-900 dark:text-white">Ближайшее неоплаченное занятие</h2>
                 <div className="text-gray-700 dark:text-gray-300">
                   {formatDate(stats.next_unpaid_session.date)} в {stats.next_unpaid_session.start_time}
+                </div>
+              </div>
+            )}
+
+            {/* Monthly Statistics */}
+            {monthlyStats.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+                <h2 className="font-semibold mb-4 text-gray-900 dark:text-white">Статистика по месяцам</h2>
+                <div className="space-y-4">
+                  {monthlyStats.map((monthStat) => (
+                    <div key={monthStat.month.toISOString()} className="border-b border-gray-200 dark:border-gray-700 pb-3 last:border-b-0 last:pb-0">
+                      <div className="font-semibold text-gray-900 dark:text-white mb-2">
+                        {format(monthStat.month, 'MMMM yyyy')}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Занятий: </span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{monthStat.total_sessions}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Оплачено: </span>
+                          <span className="font-semibold text-green-600 dark:text-green-400">{monthStat.paid_sessions}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Не оплачено: </span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{monthStat.unpaid_sessions}</span>
+                        </div>
+                        {monthStat.partially_paid_sessions > 0 && (
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Частично: </span>
+                            <span className="font-semibold text-yellow-600 dark:text-yellow-400">{monthStat.partially_paid_sessions}</span>
+                          </div>
+                        )}
+                        {monthStat.total_debt > 0 && (
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Долг: </span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{monthStat.total_debt.toFixed(2)} BYN</span>
+                          </div>
+                        )}
+                        {monthStat.total_paid > 0 && (
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Оплачено: </span>
+                            <span className="font-semibold text-green-600 dark:text-green-400">{monthStat.total_paid.toFixed(2)} BYN</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
