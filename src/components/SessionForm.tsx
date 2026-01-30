@@ -17,7 +17,6 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
     client_id: session?.client_id || '',
     date: session?.date || toISODate(new Date()),
     start_time: session?.start_time || '10:00',
-    duration_minutes: session?.duration_minutes || 60,
     price_override: session?.price_override || undefined,
     notes: session?.notes || '',
   });
@@ -113,21 +112,6 @@ export function SessionForm({ clients, session, onSave, onCancel }: SessionFormP
               required
               value={formData.start_time}
               onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Длительность (минуты) *
-            </label>
-            <input
-              type="number"
-              required
-              min="15"
-              step="15"
-              value={formData.duration_minutes}
-              onChange={(e) => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           </div>

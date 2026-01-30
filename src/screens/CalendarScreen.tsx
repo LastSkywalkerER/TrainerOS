@@ -498,8 +498,127 @@ export function CalendarScreen() {
           }
         };
 
-        // Helper function to calculate column index and width for a session
-        const getSessionColumn = (session: CalendarSession) => {
+        // Helper function to parse time string to minutes
+        const timeToMinutes = (timeStr: string): number => {
+          const [hours, minutes] = timeStr.split(':').map(Number);
+          return hours * 60 + minutes;
+        };
+
+        // Helper function to check if two sessions overlap
+        const sessionsOverlap = (session1: CalendarSession, session2: CalendarSession): boolean => {
+          const start1 = timeToMinutes(session1.start_time);
+          const start2 = timeToMinutes(session2.start_time);
+          // Assume default duration of 1 hour if not specified
+          const end1 = start1 + 60;
+          const end2 = start2 + 60;
+          return !(end1 <= start2 || end2 <= start1);
+        };
+
+        // Layout algorithm: assign rows to overlapping sessions for vertical distribution
+        // Sessions at the same time get distributed vertically with spacing
+        const layoutSessions = (daySessions: CalendarSession[]): Map<string, { row: number; totalRows: number }> => {
+          const layout = new Map<string, { row: number; totalRows: number }>();
+          const sortedSessions = [...daySessions].sort((a, b) => 
+            timeToMinutes(a.start_time) - timeToMinutes(b.start_time)
+          );
+
+          // Group sessions by exact start time
+          const sessionsByTime = new Map<string, CalendarSession[]>();
+          for (const session of sortedSessions) {
+            const timeKey = session.start_time;
+            if (!sessionsByTime.has(timeKey)) {
+              sessionsByTime.set(timeKey, []);
+            }
+            sessionsByTime.get(timeKey)!.push(session);
+          }
+
+          // For each time slot, assign rows to sessions
+          for (const [, timeSessions] of sessionsByTime.entries()) {
+            if (timeSessions.length === 1) {
+              // Single session - no need for row distribution
+              layout.set(timeSessions[0].id, { row: 0, totalRows: 1 });
+            } else {
+              // Multiple sessions at the same time - distribute vertically
+              for (let i = 0; i < timeSessions.length; i++) {
+                layout.set(timeSessions[i].id, { row: i, totalRows: timeSessions.length });
+              }
+            }
+          }
+
+          // Handle overlapping sessions (different start times but overlapping)
+          // Group overlapping sessions
+          const overlapGroups: CalendarSession[][] = [];
+          const sessionToOverlapGroup = new Map<string, number>();
+
+          for (const session of sortedSessions) {
+            const overlappingGroupIndices = new Set<number>();
+            
+            // Find all groups that contain sessions overlapping with this session
+            for (const [otherId, groupIndex] of sessionToOverlapGroup.entries()) {
+              const otherSession = sortedSessions.find(s => s.id === otherId);
+              if (otherSession && sessionsOverlap(session, otherSession) && session.start_time !== otherSession.start_time) {
+                overlappingGroupIndices.add(groupIndex);
+              }
+            }
+            
+            if (overlappingGroupIndices.size === 0) {
+              // Check if this session already has a layout (same time group)
+              if (!layout.has(session.id)) {
+                // Create new overlap group
+                const newGroupIndex = overlapGroups.length;
+                overlapGroups.push([session]);
+                sessionToOverlapGroup.set(session.id, newGroupIndex);
+                layout.set(session.id, { row: 0, totalRows: 1 });
+              }
+            } else {
+              // Merge overlapping groups
+              const groupIndices = Array.from(overlappingGroupIndices);
+              const targetGroupIndex = groupIndices[0];
+              
+              // Add session to target group
+              overlapGroups[targetGroupIndex].push(session);
+              sessionToOverlapGroup.set(session.id, targetGroupIndex);
+              
+              // Merge other groups into target group
+              for (let i = groupIndices.length - 1; i > 0; i--) {
+                const groupIndex = groupIndices[i];
+                const groupToMerge = overlapGroups[groupIndex];
+                for (const s of groupToMerge) {
+                  sessionToOverlapGroup.set(s.id, targetGroupIndex);
+                }
+                overlapGroups[targetGroupIndex].push(...groupToMerge);
+                overlapGroups[groupIndex] = []; // Mark as merged
+              }
+              
+              // Update layout for all sessions in the merged group
+              const mergedGroup = overlapGroups[targetGroupIndex];
+              for (let i = 0; i < mergedGroup.length; i++) {
+                const existingLayout = layout.get(mergedGroup[i].id);
+                if (existingLayout) {
+                  // If session was in same-time group, keep its row but update totalRows
+                  layout.set(mergedGroup[i].id, { 
+                    row: existingLayout.row, 
+                    totalRows: Math.max(existingLayout.totalRows, mergedGroup.length) 
+                  });
+                } else {
+                  layout.set(mergedGroup[i].id, { row: i, totalRows: mergedGroup.length });
+                }
+              }
+            }
+          }
+
+          // Set default layout for sessions not in any group
+          for (const session of sortedSessions) {
+            if (!layout.has(session.id)) {
+              layout.set(session.id, { row: 0, totalRows: 1 });
+            }
+          }
+
+          return layout;
+        };
+
+        // Helper function to calculate position and dimensions for a session
+        const getSessionPosition = (session: CalendarSession, layout: Map<string, { row: number; totalRows: number }>) => {
           const [hours, minutes] = session.start_time.split(':').map(Number);
           const startMinutes = hours * 60 + minutes;
           
@@ -509,23 +628,40 @@ export function CalendarScreen() {
             return startMinutes >= slotStartMinutes && startMinutes < slotStartMinutes + 60;
           });
           
-          if (slotIndex === -1) return { slotIndex: -1, leftPercent: 0, widthPercent: 0 };
+          if (slotIndex === -1) return { slotIndex: -1, leftPercent: 0, topPercent: 0, heightPercent: 100 };
           
-          // Calculate position within the hour slot (0-60 minutes)
+          // Calculate horizontal position within the hour slot (0-60 minutes)
           const slotStartMinutes = timeSlots[slotIndex] * 60;
           const offsetInSlot = startMinutes - slotStartMinutes;
           const leftPercent = (offsetInSlot / 60) * 100;
           
-          // Calculate width based on duration
-          const widthPercent = Math.min((session.duration_minutes / 60) * 100, 100);
+          // Get layout info for vertical distribution
+          const layoutInfo = layout.get(session.id);
+          const row = layoutInfo?.row ?? 0;
+          const totalRows = layoutInfo?.totalRows ?? 1;
           
-          return { slotIndex, leftPercent, widthPercent };
+          // Calculate vertical position and height
+          // Add spacing between rows (2px gap between sessions)
+          const GAP_SIZE = 2; // pixels
+          const CELL_HEIGHT = 60; // pixels (height of hour cell)
+          const totalGaps = (totalRows - 1) * GAP_SIZE;
+          const availableHeight = CELL_HEIGHT - totalGaps;
+          const rowHeight = availableHeight / totalRows;
+          const topOffset = row * (rowHeight + GAP_SIZE);
+          
+          const topPercent = (topOffset / CELL_HEIGHT) * 100;
+          const heightPercent = (rowHeight / CELL_HEIGHT) * 100;
+          
+          return { slotIndex, leftPercent, topPercent, heightPercent };
         };
 
-        // Group sessions by day
+        // Group sessions by day and calculate layouts
         const sessionsByDay = weekDays.map((day) => {
           const daySessions = getSessionsForDate(day);
-          return daySessions.sort((a, b) => a.start_time.localeCompare(b.start_time));
+          return {
+            sessions: daySessions.sort((a, b) => a.start_time.localeCompare(b.start_time)),
+            layout: layoutSessions(daySessions),
+          };
         });
 
         return (
@@ -602,7 +738,7 @@ export function CalendarScreen() {
                 style={{ scrollbarWidth: 'thin', maxHeight: 'calc(100vh - 300px)' }}
               >
                 {weekDays.map((day, dayIndex) => {
-                  const daySessions = sessionsByDay[dayIndex];
+                  const { sessions: daySessions, layout } = sessionsByDay[dayIndex];
                   const isToday = toISODate(day) === toISODate(new Date());
                   
                   return (
@@ -628,7 +764,7 @@ export function CalendarScreen() {
                         const paymentStatus = sessionStatuses.get(session.id);
                         const isPaused = isSessionInPause(session);
                         const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
-                        const { slotIndex, leftPercent, widthPercent } = getSessionColumn(session);
+                        const { slotIndex, leftPercent, topPercent, heightPercent } = getSessionPosition(session, layout);
                         
                         // Skip sessions that start before 6:00 or after 23:00
                         const [hours] = session.start_time.split(':').map(Number);
@@ -636,7 +772,8 @@ export function CalendarScreen() {
                         
                         // Calculate position using exact column width
                         const left = slotIndex * HOUR_COLUMN_WIDTH + (leftPercent / 100) * HOUR_COLUMN_WIDTH;
-                        const width = (widthPercent / 100) * HOUR_COLUMN_WIDTH;
+                        const top = (topPercent / 100) * 60; // 60px is the height of hour cell
+                        const height = (heightPercent / 100) * 60;
                         
                         return (
                           <div
@@ -645,11 +782,11 @@ export function CalendarScreen() {
                             className={`absolute rounded p-1 ${colorClasses} cursor-pointer hover:opacity-80 overflow-hidden text-xs shadow-sm`}
                             style={{
                               left: `${left}px`,
-                              width: `${Math.max(width, 80)}px`, // Minimum width 80px
-                              top: '2px',
-                              bottom: '2px',
+                              width: `${HOUR_COLUMN_WIDTH - 4}px`, // Full width minus small margin
+                              top: `${top}px`,
+                              height: `${height}px`,
                             }}
-                            title={`${formatTime(session.start_time)} - ${client?.full_name || 'Неизвестный клиент'} (${session.duration_minutes} мин)`}
+                            title={`${formatTime(session.start_time)} - ${client?.full_name || 'Неизвестный клиент'}`}
                           >
                             {/* Time with icons */}
                             <div className="font-semibold truncate flex items-center gap-1">
@@ -669,12 +806,6 @@ export function CalendarScreen() {
                             <div className="truncate overflow-hidden whitespace-nowrap">
                               {client?.full_name || 'Неизвестный'}
                             </div>
-                            {/* Duration - only show if there's space */}
-                            {width >= 100 && (
-                              <div className="text-xs opacity-75">
-                                {session.duration_minutes} мин
-                              </div>
-                            )}
                           </div>
                         );
                       })}
@@ -700,52 +831,200 @@ export function CalendarScreen() {
               const daySessions = getSessionsForDate(currentDate).sort((a, b) =>
                 a.start_time.localeCompare(b.start_time)
               );
+              
+              // Generate time slots only for full hours from 6:00 to 23:00
               const timeSlots: number[] = [];
               for (let hour = 6; hour <= 23; hour++) {
                 timeSlots.push(hour);
               }
 
-              // Group sessions by hour
-              const sessionsByHour = new Map<number, CalendarSession[]>();
-              daySessions.forEach((session) => {
-                const [sessionHour] = session.start_time.split(':').map(Number);
-                if (!sessionsByHour.has(sessionHour)) {
-                  sessionsByHour.set(sessionHour, []);
+              // Helper function to parse time string to minutes
+              const timeToMinutes = (timeStr: string): number => {
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                return hours * 60 + minutes;
+              };
+
+              // Helper function to check if two sessions overlap
+              const sessionsOverlap = (session1: CalendarSession, session2: CalendarSession): boolean => {
+                const start1 = timeToMinutes(session1.start_time);
+                const start2 = timeToMinutes(session2.start_time);
+                // Assume default duration of 1 hour if not specified
+                const end1 = start1 + 60;
+                const end2 = start2 + 60;
+                return !(end1 <= start2 || end2 <= start1);
+              };
+
+              // Layout algorithm: assign columns to overlapping sessions for day view
+              const layoutDaySessions = (sessions: CalendarSession[]): Map<string, { column: number; totalColumns: number }> => {
+                const layout = new Map<string, { column: number; totalColumns: number }>();
+                const sortedSessions = [...sessions].sort((a, b) => 
+                  timeToMinutes(a.start_time) - timeToMinutes(b.start_time)
+                );
+
+                // Track which sessions are in which column groups
+                const columnGroups: CalendarSession[][] = [];
+                const sessionToGroup = new Map<string, number>();
+
+                // Build column groups by finding all overlapping sessions
+                for (const session of sortedSessions) {
+                  const overlappingGroupIndices = new Set<number>();
+                  
+                  // Find all groups that contain sessions overlapping with this session
+                  for (const [otherId, groupIndex] of sessionToGroup.entries()) {
+                    const otherSession = sortedSessions.find(s => s.id === otherId);
+                    if (otherSession && sessionsOverlap(session, otherSession)) {
+                      overlappingGroupIndices.add(groupIndex);
+                    }
+                  }
+                  
+                  if (overlappingGroupIndices.size === 0) {
+                    // Create new group
+                    const newGroupIndex = columnGroups.length;
+                    columnGroups.push([session]);
+                    sessionToGroup.set(session.id, newGroupIndex);
+                  } else {
+                    // Merge all overlapping groups
+                    const groupIndices = Array.from(overlappingGroupIndices);
+                    const targetGroupIndex = groupIndices[0];
+                    
+                    // Add session to target group
+                    columnGroups[targetGroupIndex].push(session);
+                    sessionToGroup.set(session.id, targetGroupIndex);
+                    
+                    // Merge other groups into target group
+                    for (let i = groupIndices.length - 1; i > 0; i--) {
+                      const groupIndex = groupIndices[i];
+                      const groupToMerge = columnGroups[groupIndex];
+                      for (const s of groupToMerge) {
+                        sessionToGroup.set(s.id, targetGroupIndex);
+                      }
+                      columnGroups[targetGroupIndex].push(...groupToMerge);
+                      columnGroups[groupIndex] = []; // Mark as merged
+                    }
+                  }
                 }
-                sessionsByHour.get(sessionHour)!.push(session);
-              });
+
+                // Assign columns within each group using greedy algorithm
+                for (const group of columnGroups) {
+                  if (group.length === 0) continue;
+                  
+                  const columns: CalendarSession[][] = [];
+                  
+                  // Sort group by start time
+                  const sortedGroup = [...group].sort((a, b) => 
+                    timeToMinutes(a.start_time) - timeToMinutes(b.start_time)
+                  );
+                  
+                  // Assign each session to a column
+                  for (const session of sortedGroup) {
+                    let assigned = false;
+                    // Try to find a column where this session doesn't overlap
+                    for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+                      const column = columns[colIndex];
+                      if (!column.some(s => sessionsOverlap(session, s))) {
+                        column.push(session);
+                        assigned = true;
+                        break;
+                      }
+                    }
+                    // If no column found, create a new one
+                    if (!assigned) {
+                      columns.push([session]);
+                    }
+                  }
+                  
+                  // Set layout info for all sessions in this group
+                  const maxColumns = columns.length;
+                  for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+                    for (const session of columns[colIndex]) {
+                      layout.set(session.id, { column: colIndex, totalColumns: maxColumns });
+                    }
+                  }
+                }
+
+                // Set default layout for sessions not in any group (no overlaps)
+                for (const session of sortedSessions) {
+                  if (!layout.has(session.id)) {
+                    layout.set(session.id, { column: 0, totalColumns: 1 });
+                  }
+                }
+
+                return layout;
+              };
+
+              // Calculate position for a session relative to hour rows
+              const getSessionPosition = (session: CalendarSession, layout: Map<string, { column: number; totalColumns: number }>) => {
+                const [hours, minutes] = session.start_time.split(':').map(Number);
+                if (hours < 6 || hours > 23) return null;
+                
+                // Find which hour row this session belongs to (the hour it starts in)
+                const hourRow = hours;
+                const hourRowIndex = timeSlots.indexOf(hourRow);
+                if (hourRowIndex === -1) return null;
+                
+                // Calculate offset within the hour (0-60 minutes)
+                // This will be used as percentage from top of the hour row
+                const offsetInHour = minutes;
+                const topPercent = (offsetInHour / 60) * 100;
+                
+                // Get layout info for this session
+                const layoutInfo = layout.get(session.id);
+                const column = layoutInfo?.column ?? 0;
+                const totalColumns = layoutInfo?.totalColumns ?? 1;
+                
+                return { hourRowIndex, topPercent, column, totalColumns };
+              };
+
+              // Calculate layout for all day sessions
+              const dayLayout = layoutDaySessions(daySessions);
 
               return (
                 <div className="relative">
                   {timeSlots.map((hour) => {
-                    const hourSessions = sessionsByHour.get(hour) || [];
+                    const hourTime = `${String(hour).padStart(2, '0')}:00`;
+                    
+                    // Find all sessions that start in this hour
+                    const hourSessions = daySessions.filter((session) => {
+                      const [sessionHour] = session.start_time.split(':').map(Number);
+                      return sessionHour === hour;
+                    });
 
                     return (
                       <div
                         key={hour}
-                        className="border-b border-gray-100 dark:border-gray-700 p-2 min-h-16"
+                        className="relative border-b border-gray-100 dark:border-gray-700"
+                        style={{ minHeight: '80px' }}
                       >
                         <div className="flex">
-                          <div className="w-16 text-sm text-gray-600 dark:text-gray-400 font-medium">
-                            {String(hour).padStart(2, '0')}:00
+                          <div className="w-20 text-sm text-gray-600 dark:text-gray-400 font-medium p-2">
+                            {hourTime}
                           </div>
-                          <div className="flex-1">
+                          <div className="flex-1 relative p-2" style={{ minHeight: '80px' }}>
+                            {/* Sessions positioned absolutely based on their exact time */}
                             {hourSessions.map((session) => {
                               const client = clients.find((c) => c.id === session.client_id);
                               const paymentStatus = sessionStatuses.get(session.id);
                               const isPaused = isSessionInPause(session);
                               const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
-                              const [hours, minutes] = session.start_time.split(':').map(Number);
-                              const endMinutes = minutes + session.duration_minutes;
-                              const endHours = hours + Math.floor(endMinutes / 60);
-                              const endMins = endMinutes % 60;
-                              const endTime = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
-
+                              const position = getSessionPosition(session, dayLayout);
+                              
+                              if (!position) return null;
+                              
+                              // Calculate width and left position based on column layout
+                              const widthPercent = 100 / position.totalColumns;
+                              const leftPercent = (position.column * widthPercent);
+                              
                               return (
                                 <div
                                   key={session.id}
                                   onClick={() => handleSessionSelect(session)}
-                                  className={`mb-2 p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80`}
+                                  className={`absolute p-2 rounded ${colorClasses} cursor-pointer hover:opacity-80 shadow-sm`}
+                                  style={{
+                                    top: `${position.topPercent}%`,
+                                    left: `calc(${leftPercent}% + 8px)`,
+                                    width: `calc(${widthPercent}% - 16px)`,
+                                    minHeight: '48px',
+                                  }}
                                 >
                                   <div className="text-sm font-semibold flex items-center gap-1">
                                     {hasNotes(session) && (
@@ -758,17 +1037,14 @@ export function CalendarScreen() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                       </svg>
                                     )}
-                                    {formatTime(session.start_time)} - {endTime}
+                                    {formatTime(session.start_time)}
                                   </div>
                                   <div className="text-sm">{client?.full_name}</div>
-                                  <div className="text-xs opacity-75">
-                                    {session.duration_minutes} минут
-                                  </div>
                                 </div>
                               );
                             })}
                             {hourSessions.length === 0 && (
-                              <div className="text-xs text-gray-400 dark:text-gray-500">—</div>
+                              <div className="text-xs text-gray-400 dark:text-gray-500 absolute top-2 left-2">—</div>
                             )}
                           </div>
                         </div>

@@ -21,7 +21,6 @@ export interface ScheduleRule {
   rule_id: string;
   weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7; // 1=Monday, 7=Sunday
   start_time: string; // HH:mm format
-  duration_minutes: number;
   is_active: boolean;
   base_price?: number; // Base price for sessions generated from this rule
 }
@@ -45,7 +44,6 @@ export interface CalendarSession {
   client_id: string;
   date: string; // ISO date (YYYY-MM-DD)
   start_time: string; // HH:mm format
-  duration_minutes: number;
   status: SessionStatus;
   template_rule_id?: string;
   is_custom: boolean;
@@ -113,7 +111,6 @@ export interface CreateTemplateDto {
 export interface CreateSessionDto {
   date: string;
   start_time: string;
-  duration_minutes: number;
   price_override?: number;
   notes?: string;
 }

@@ -262,7 +262,6 @@ export class ScheduleService {
           {
             date: dateStr,
             start_time: rule.start_time,
-            duration_minutes: rule.duration_minutes,
             price_override: rule.base_price,
           },
           rule.rule_id

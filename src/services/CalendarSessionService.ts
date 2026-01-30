@@ -17,7 +17,6 @@ export class CalendarSessionService {
       client_id: clientId,
       date: session.date,
       start_time: session.start_time,
-      duration_minutes: session.duration_minutes,
       status: 'planned',
       is_custom: true,
       price_override: session.price_override,
@@ -41,7 +40,6 @@ export class CalendarSessionService {
       client_id: clientId,
       date: session.date,
       start_time: session.start_time,
-      duration_minutes: session.duration_minutes,
       status: 'planned',
       template_rule_id: templateRuleId,
       is_custom: false,
@@ -68,7 +66,6 @@ export class CalendarSessionService {
     const isEditingMainParams = 
       'date' in updates || 
       'start_time' in updates || 
-      'duration_minutes' in updates || 
       'price_override' in updates ||
       'client_id' in updates;
 

@@ -61,6 +61,17 @@ export class TrainerOSDatabase extends Dexie {
       payments: 'id, client_id, paid_at',
       paymentAllocations: 'id, payment_id, session_id, [payment_id+session_id]',
     });
+
+    // Version 5: Remove duration_minutes from ScheduleRule and CalendarSession
+    // No index changes needed, just schema update
+    this.version(5).stores({
+      clients: 'id, status, full_name',
+      scheduleTemplates: 'id, client_id',
+      calendarSessions: 'id, client_id, date, status, [client_id+date]',
+      packages: 'id, client_id, status',
+      payments: 'id, client_id, paid_at',
+      paymentAllocations: 'id, payment_id, session_id, [payment_id+session_id]',
+    });
   }
 }
 

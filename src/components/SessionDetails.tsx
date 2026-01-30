@@ -346,11 +346,6 @@ export function SessionDetails({
           </div>
 
           <div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Длительность</div>
-            <div className="font-semibold text-gray-900 dark:text-white">{session.duration_minutes} минут</div>
-          </div>
-
-          <div>
             <div className="text-sm text-gray-600 dark:text-gray-400">Статус оплаты</div>
             <span className={`px-3 py-1 rounded text-sm ${statusColors[status]}`}>
               {statusLabels[status]}

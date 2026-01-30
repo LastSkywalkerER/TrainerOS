@@ -27,7 +27,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
   const [formData, setFormData] = useState({
     weekday: 1 as 1 | 2 | 3 | 4 | 5 | 6 | 7,
     start_time: '09:00',
-    duration_minutes: 60,
     base_price: '',
     is_active: true,
   });
@@ -133,7 +132,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
       rule_id: generateId(),
       weekday: formData.weekday,
       start_time: formData.start_time,
-      duration_minutes: formData.duration_minutes,
       base_price: formData.base_price ? parseFloat(formData.base_price) : undefined,
       is_active: formData.is_active,
     };
@@ -141,7 +139,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     setFormData({
       weekday: 1,
       start_time: '09:00',
-      duration_minutes: 60,
       base_price: '',
       is_active: true,
     });
@@ -153,7 +150,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     setFormData({
       weekday: rule.weekday,
       start_time: rule.start_time,
-      duration_minutes: rule.duration_minutes,
       base_price: rule.base_price?.toString() || '',
       is_active: rule.is_active,
     });
@@ -168,7 +164,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
       ...updatedRules[editingRuleIndex],
       weekday: formData.weekday,
       start_time: formData.start_time,
-      duration_minutes: formData.duration_minutes,
       base_price: formData.base_price ? parseFloat(formData.base_price) : undefined,
       is_active: formData.is_active,
     };
@@ -176,7 +171,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     setFormData({
       weekday: 1,
       start_time: '09:00',
-      duration_minutes: 60,
       base_price: '',
       is_active: true,
     });
@@ -263,7 +257,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
     setFormData({
       weekday: 1,
       start_time: '09:00',
-      duration_minutes: 60,
       base_price: '',
       is_active: true,
     });
@@ -351,7 +344,7 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
                       {weekdayNames[rule.weekday]}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {rule.start_time} ({rule.duration_minutes} мин)
+                      {rule.start_time}
                     </div>
                     {rule.base_price !== undefined && rule.base_price !== null && (
                       <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -423,22 +416,6 @@ export function ClientScheduleForm({ clientId, onSave }: ClientScheduleFormProps
                 type="time"
                 value={formData.start_time}
                 onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Длительность (минуты) *
-              </label>
-              <input
-                type="number"
-                min="15"
-                step="15"
-                value={formData.duration_minutes}
-                onChange={(e) =>
-                  setFormData({ ...formData, duration_minutes: parseInt(e.target.value) || 60 })
-                }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
