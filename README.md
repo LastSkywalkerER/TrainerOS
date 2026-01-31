@@ -2,15 +2,15 @@
 
 **English:**
 
-Trainer OS streamlines your fitness coaching business by automating the most time-consuming administrative tasks. Stop juggling spreadsheets, notebooks, and payment tracking—everything you need is in one place, accessible right from your phone, even when you're offline in the gym or at a client's location.
+Trainer OS is a standalone offline application that works without internet. Install it on your phone and manage your fitness coaching business anywhere—in the gym, at client locations, or on the go.
 
-The app simplifies your daily workflow: automatically generate recurring lessons from your schedule templates, track payments and distribute them across sessions, monitor client balances and outstanding debts, and get instant insights into your business performance. Your client data stays private and secure on your device, while you focus on what matters most—coaching.
+Automate recurring lesson scheduling, track payments and distribute them across sessions, monitor client balances and debts, and analyze business performance. All data stays private on your device.
 
 **Русский:**
 
-Trainer OS упрощает управление фитнес-бизнесом, автоматизируя самые трудоёмкие административные задачи. Забудьте о таблицах, блокнотах и ручном учёте платежей—всё необходимое в одном месте, доступно прямо с телефона, даже без интернета в зале или у клиента.
+Trainer OS — это отдельное офлайн-приложение, работающее без интернета. Установите его на телефон и управляйте фитнес-бизнесом где угодно—в зале, у клиентов или в дороге.
 
-Приложение упрощает ежедневную работу: автоматически создаёт повторяющиеся занятия из шаблонов расписания, отслеживает платежи и распределяет их по сессиям, контролирует балансы клиентов и задолженности, предоставляет моментальную аналитику бизнеса. Данные клиентов остаются приватными и безопасными на вашем устройстве, пока вы сосредоточены на главном—тренировках.
+Автоматизируйте создание повторяющихся занятий, отслеживайте платежи и распределяйте их по сессиям, контролируйте балансы и долги клиентов, анализируйте показатели бизнеса. Все данные остаются приватными на вашем устройстве.
 
 ## Features
 
