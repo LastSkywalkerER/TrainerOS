@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarSession } from '../db/types';
 import { calendarSessionService } from '../services/CalendarSessionService';
@@ -63,9 +63,6 @@ export function CalendarScreen() {
   const [showForm, setShowForm] = useState(false);
   const [editingSession, setEditingSession] = useState<CalendarSession | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
-  const weekHeaderScrollRef = useRef<HTMLDivElement>(null);
-  const weekContentScrollRef = useRef<HTMLDivElement>(null);
-  const weekDaysColumnScrollRef = useRef<HTMLDivElement>(null);
 
   // Create tutorial steps dynamically based on view
   const getTutorialSteps = (): TutorialStep[] => {
@@ -301,7 +298,7 @@ export function CalendarScreen() {
 
 
   return (
-    <div className="p-4">
+    <div className="p-4 w-full max-w-full overflow-x-hidden">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           {view === 'month'
@@ -377,7 +374,7 @@ export function CalendarScreen() {
 
       {/* Calendar Grid */}
       {view === 'month' && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden w-full max-w-full">
           <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">
             {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day) => (
               <div key={day} className="p-2 text-center text-sm font-semibold text-gray-600 dark:text-gray-400">
@@ -469,408 +466,331 @@ export function CalendarScreen() {
           timeSlots.push(hour);
         }
 
-        // Fixed width for each hour column (must match in header and grid)
-        const HOUR_COLUMN_WIDTH = 120;
+        // Grid configuration: 4x4 mini-cells per hour
+        const MINI_CELLS_PER_SIDE = 4;
+        const HOUR_WIDTH = 100; // Fixed width per hour in pixels
+        const DAY_ROW_HEIGHT = 60; // Fixed height per day row in pixels
+        const MINI_CELL_WIDTH = HOUR_WIDTH / MINI_CELLS_PER_SIDE; // 25px
+        const MINI_CELL_HEIGHT = DAY_ROW_HEIGHT / MINI_CELLS_PER_SIDE; // 15px
+        const TOTAL_HOURS = timeSlots.length; // 18 hours (6:00 to 23:00)
+        const CONTENT_WIDTH = TOTAL_HOURS * HOUR_WIDTH; // 1800px
+        const CONTENT_HEIGHT = weekDays.length * DAY_ROW_HEIGHT; // 420px
+        const DAYS_COLUMN_WIDTH = 60; // Fixed width for days column
+        const HEADER_HEIGHT = 40; // Fixed height for hours header
+        const GAP_SIZE = 2; // Gap between sessions in pixels
 
-        // Sync horizontal scroll between header and content
-        const handleHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
-          if (weekContentScrollRef.current) {
-            weekContentScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-          }
+        // Helper function to check if sessions overlap in time
+        const sessionsOverlap = (s1: CalendarSession, s2: CalendarSession): boolean => {
+          const parseTime = (t: string) => {
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+          };
+          const start1 = parseTime(s1.start_time);
+          const start2 = parseTime(s2.start_time);
+          // Assume 1 hour duration
+          const end1 = start1 + 60;
+          const end2 = start2 + 60;
+          return !(end1 <= start2 || end2 <= start1);
         };
 
-        const handleContentScroll = (e: React.UIEvent<HTMLDivElement>) => {
-          if (weekHeaderScrollRef.current) {
-            weekHeaderScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-          }
-        };
-
-        // Sync vertical scroll between days column and content grid
-        const handleDaysColumnScroll = (e: React.UIEvent<HTMLDivElement>) => {
-          if (weekContentScrollRef.current) {
-            weekContentScrollRef.current.scrollTop = e.currentTarget.scrollTop;
-          }
-        };
-
-        const handleContentVerticalScroll = (e: React.UIEvent<HTMLDivElement>) => {
-          if (weekDaysColumnScrollRef.current) {
-            weekDaysColumnScrollRef.current.scrollTop = e.currentTarget.scrollTop;
-          }
-        };
-
-        // Helper function to calculate which mini-cells a session occupies
-        // Each hour cell is divided into 4x4 = 16 mini-cells
-        // Each session occupies 1 mini-cell (1 column x 1 row) per hour slot, or full width/height if single session
-        // Returns: { startSlotIndex, slot1Column, slot1Row, slot1ColumnSpan, slot1RowSpan, slot2Column, slot2Row, spansSlots }
-        const getSessionGridPosition = (session: CalendarSession, allDaySessions: CalendarSession[]) => {
+        // Calculate session position within day row
+        const calculateSessionPosition = (
+          session: CalendarSession,
+          allDaySessions: CalendarSession[]
+        ): { left: number; width: number; top: number; height: number } | null => {
           const [hours, minutes] = session.start_time.split(':').map(Number);
-          const startMinutes = hours * 60 + minutes;
+          const slotIndex = timeSlots.indexOf(hours);
           
-          // Find which hour slot this session starts in
-          const startSlotIndex = timeSlots.findIndex((slotHour) => {
-            const slotStartMinutes = slotHour * 60;
-            return startMinutes >= slotStartMinutes && startMinutes < slotStartMinutes + 60;
+          if (slotIndex === -1) return null;
+          
+          // Calculate horizontal position based on minutes
+          // :00 starts at column 0, :15 at column 1, :30 at column 2, :45 at column 3
+          const minuteColumn = Math.floor(minutes / 15);
+          const left = (slotIndex * HOUR_WIDTH) + (minuteColumn * MINI_CELL_WIDTH);
+          
+          // Width is always 4 mini-cells (1 hour = 100px)
+          // Clip width if it extends beyond the last hour
+          const maxLeft = CONTENT_WIDTH;
+          const rawWidth = HOUR_WIDTH;
+          const width = Math.min(rawWidth, maxLeft - left);
+          
+          // Find overlapping sessions to determine vertical position
+          const overlappingSessions = allDaySessions.filter(s => 
+            s.id !== session.id && sessionsOverlap(session, s)
+          );
+          
+          // Separate full-hour (:00) and partial sessions
+          const isFullHour = minutes === 0;
+          const allOverlapping = [session, ...overlappingSessions];
+          
+          // Sort: full-hour sessions first, then by start time, then by id
+          const sortedOverlapping = [...allOverlapping].sort((a, b) => {
+            const [, aMins] = a.start_time.split(':').map(Number);
+            const [, bMins] = b.start_time.split(':').map(Number);
+            const aIsFullHour = aMins === 0;
+            const bIsFullHour = bMins === 0;
+            
+            // Full-hour sessions come first
+            if (aIsFullHour && !bIsFullHour) return -1;
+            if (!aIsFullHour && bIsFullHour) return 1;
+            
+            // Then sort by start time
+            const timeCompare = a.start_time.localeCompare(b.start_time);
+            if (timeCompare !== 0) return timeCompare;
+            
+            return a.id.localeCompare(b.id);
           });
           
-          if (startSlotIndex === -1) return null;
+          const sessionIndex = sortedOverlapping.findIndex(s => s.id === session.id);
+          const totalOverlapping = sortedOverlapping.length;
           
-          if (minutes === 30) {
-            // CASE 1: Session starts at :30 (e.g., 9:30)
-            // Should be below :00 sessions and span from middle of first slot to middle of second slot
-            
-            // Find all :00 sessions in both hours (9:00 and 10:00) to determine which row to use
-            const sessionsAt00Hour1 = allDaySessions.filter(s => {
-              const [sHours, sMinutes] = s.start_time.split(':').map(Number);
-              return sMinutes === 0 && sHours === hours;
-            });
-            const sessionsAt00Hour2 = allDaySessions.filter(s => {
-              const [sHours, sMinutes] = s.start_time.split(':').map(Number);
-              return sMinutes === 0 && sHours === hours + 1;
-            });
-            const maxRowUsedBy00 = Math.max(sessionsAt00Hour1.length, sessionsAt00Hour2.length);
-            
-            // :30 session should be below :00 sessions
-            // Use column 3 or 4 (right half) in first slot, column 1 or 2 (left half) in second slot
-            const sessionsAt30 = allDaySessions.filter(s => {
-              const [sHours, sMinutes] = s.start_time.split(':').map(Number);
-              return sMinutes === 30 && sHours === hours;
-            });
-            const sorted30Sessions = [...sessionsAt30].sort((a, b) => a.id.localeCompare(b.id));
-            const sessionIndex = sorted30Sessions.findIndex(s => s.id === session.id);
-            
-            // First slot: use column 3 or 4 (right half)
-            // Second slot: use column 1 or 2 (left half) to span from middle to middle
-            const slot1Column = 3 + (sessionIndex % 2); // Column 3 or 4 in first slot
-            const slot2Column = 1 + (sessionIndex % 2); // Column 1 or 2 in second slot
-            
-            // Row should be below :00 sessions
-            let slot1Row = maxRowUsedBy00 + 1 + sessionIndex;
-            if (slot1Row > 4) {
-              slot1Row = 4; // Fallback to last row
-            }
-            const slot2Row = slot1Row; // Same row in both slots
-            
-            return {
-              startSlotIndex,
-              slot1Column,
-              slot1Row,
-              slot2Column,
-              slot2Row,
-              spansSlots: 2,
-            };
+          // Count full-hour sessions among overlapping
+          const fullHourCount = sortedOverlapping.filter(s => {
+            const [, m] = s.start_time.split(':').map(Number);
+            return m === 0;
+          }).length;
+          
+          // Count partial sessions among overlapping
+          const partialCount = totalOverlapping - fullHourCount;
+          
+          let top: number;
+          let height: number;
+          
+          if (totalOverlapping === 1) {
+            // Single session - use full height
+            top = 0;
+            height = DAY_ROW_HEIGHT;
+          } else if (isFullHour && fullHourCount === 1 && partialCount > 0) {
+            // Single full-hour session with partial sessions - full-hour takes rows 1-3, partials take row 4
+            top = 0;
+            height = DAY_ROW_HEIGHT - MINI_CELL_HEIGHT; // Leave room for partial sessions
           } else {
-            // CASE 2: Session starts at :00 (e.g., 9:00 or 10:00)
-            // Occupies exactly 1 mini-cell (1 column x 1 row)
-            
-            // Find all sessions at the exact same time
-            const sessionsAtSameTime = allDaySessions.filter(s => 
-              s.start_time === session.start_time && s.id !== session.id
-            );
-            
-            // Sort sessions at same time to get consistent ordering
-            const sameTimeSessions = [session, ...sessionsAtSameTime].sort((a, b) => 
-              a.id.localeCompare(b.id)
-            );
-            const sameTimeIndex = sameTimeSessions.findIndex(s => s.id === session.id);
-            
-            // Calculate horizontal position (columns)
-            // Each :00 session always occupies full width (4 mini-cells horizontally)
-            // Regardless of :30 sessions, each :00 session gets full width
-            const slot1Column = 1;
-            const slot1ColumnSpan = 4; // Each session spans all 4 columns (full width)
-            
-            // Calculate vertical position (rows)
-            // If single session in this hour AND no :30 sessions in this or previous hour,
-            // it can span full height (4 rows)
-            // Otherwise, sessions stack vertically, each gets 1 mini-cell row
-            
-            // Check if there's a :30 session in this hour or previous hour
-            const has30SessionInThisHour = allDaySessions.some(s => {
-              if (s.id === session.id) return false;
-              const [sHours, sMinutes] = s.start_time.split(':').map(Number);
-              return sMinutes === 30 && sHours === hours;
-            });
-            const has30SessionInPrevHour = allDaySessions.some(s => {
-              if (s.id === session.id) return false;
-              const [sHours, sMinutes] = s.start_time.split(':').map(Number);
-              return sMinutes === 30 && sHours === hours - 1;
-            });
-            
-            const isSingleSession = sessionsAtSameTime.length === 0;
-            const canSpanFullHeight = isSingleSession && !has30SessionInThisHour && !has30SessionInPrevHour;
-            const slot1RowSpan = canSpanFullHeight ? 4 : 1; // Full height if single and no :30 sessions, 1 row otherwise
-            
-            let slot1Row = 1; // Start from row 1
-            if (!canSpanFullHeight) {
-              slot1Row = 1 + sameTimeIndex; // Row 1, 2, 3, or 4 for multiple sessions or when :30 exists
-              if (slot1Row > 4) {
-                slot1Row = 4; // Fallback to last row
-              }
-            }
-            
-            return {
-              startSlotIndex,
-              slot1Column,
-              slot1Row,
-              slot1ColumnSpan, // Number of columns to span
-              slot1RowSpan, // Number of rows to span
-              slot2Column: slot1Column, // Not used for single slot
-              slot2Row: slot1Row, // Not used for single slot
-              spansSlots: 1,
-            };
+            // Multiple overlapping sessions - stack them
+            // Each session gets 1 mini-cell height
+            const row = Math.min(sessionIndex, MINI_CELLS_PER_SIDE - 1);
+            top = row * MINI_CELL_HEIGHT;
+            height = MINI_CELL_HEIGHT;
           }
+          
+          return { left, width, top, height };
         };
 
-        // Helper function to calculate max height for a day's sessions (in hour slots)
-        const calculateDayMaxSlots = (daySessions: CalendarSession[]): number => {
-          let maxSlots = 1; // Minimum 1 hour slot
-          for (const session of daySessions) {
-            const [hours] = session.start_time.split(':').map(Number);
-            if (hours < 6 || hours > 23) continue;
-            
-            const gridPos = getSessionGridPosition(session, daySessions);
-            if (gridPos) {
-              const endSlot = gridPos.startSlotIndex + gridPos.spansSlots;
-              maxSlots = Math.max(maxSlots, endSlot);
-            }
-          }
-          return maxSlots;
-        };
-
-        // Group sessions by day and calculate layouts
+        // Group sessions by day
         const sessionsByDay = weekDays.map((day) => {
           const daySessions = getSessionsForDate(day);
-          const maxSlots = calculateDayMaxSlots(daySessions);
-          
-          return {
-            sessions: daySessions.sort((a, b) => a.start_time.localeCompare(b.start_time)),
-            maxSlots,
-          };
+          return daySessions.sort((a, b) => a.start_time.localeCompare(b.start_time));
         });
 
         return (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-            {/* Fixed header with hours */}
-            <div className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex">
-                {/* Empty cell for days column */}
-                <div className="w-20 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"></div>
-                {/* Hours header - scrollable horizontally, synced with content */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden w-full max-w-full">
+            {/* Single scroll container with sticky elements */}
+            <div 
+              className="overflow-auto"
+              style={{ 
+                maxHeight: 'calc(100vh - 280px)',
+                maxWidth: '100%',
+              }}
+            >
+              <div 
+                style={{ 
+                  display: 'grid',
+                  gridTemplateColumns: `${DAYS_COLUMN_WIDTH}px ${CONTENT_WIDTH}px`,
+                  gridTemplateRows: `${HEADER_HEIGHT}px ${CONTENT_HEIGHT}px`,
+                  width: `${DAYS_COLUMN_WIDTH + CONTENT_WIDTH}px`,
+                  height: `${HEADER_HEIGHT + CONTENT_HEIGHT}px`,
+                }}
+              >
+                {/* Corner cell - sticky top-left */}
                 <div 
-                  ref={weekHeaderScrollRef}
-                  onScroll={handleHeaderScroll}
-                  className="flex flex-1 overflow-x-auto"
-                  style={{ scrollbarWidth: 'thin' }}
+                  className="bg-gray-50 dark:bg-gray-900/50 border-r border-b border-gray-200 dark:border-gray-700"
+                  style={{ 
+                    position: 'sticky',
+                    top: 0,
+                    left: 0,
+                    zIndex: 30,
+                    width: DAYS_COLUMN_WIDTH,
+                    height: HEADER_HEIGHT,
+                  }}
+                />
+                
+                {/* Hours header - sticky top */}
+                <div 
+                  className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+                  style={{ 
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 20,
+                    display: 'flex',
+                    width: CONTENT_WIDTH,
+                    height: HEADER_HEIGHT,
+                  }}
                 >
                   {timeSlots.map((hour) => (
                     <div
                       key={hour}
-                      className="flex-shrink-0 p-2 text-center border-r border-gray-200 dark:border-gray-700"
-                      style={{ width: `${HOUR_COLUMN_WIDTH}px` }}
+                      className="flex-shrink-0 border-r border-gray-200 dark:border-gray-700 flex items-center justify-center"
+                      style={{ 
+                        width: HOUR_WIDTH,
+                        height: HEADER_HEIGHT,
+                      }}
                     >
-                      <div className="text-xs font-semibold text-gray-900 dark:text-white">
+                      <span className="text-xs font-semibold text-gray-900 dark:text-white">
                         {String(hour).padStart(2, '0')}:00
-                      </div>
+                      </span>
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
-
-            {/* Scrollable content area */}
-            <div className="flex" style={{ maxHeight: 'calc(100vh - 300px)' }}>
-              {/* Days column - scrollable vertically, synced with content */}
-              <div 
-                ref={weekDaysColumnScrollRef}
-                onScroll={handleDaysColumnScroll}
-                className="flex-shrink-0 w-20 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 sticky left-0 z-10 overflow-y-auto"
-                style={{ scrollbarWidth: 'thin', maxHeight: 'calc(100vh - 300px)' }}
-              >
-                {weekDays.map((day, index) => {
-                  const isToday = toISODate(day) === toISODate(new Date());
-                  return (
-                    <div
-                      key={day.toISOString()}
-                      className={`border-b border-gray-200 dark:border-gray-700 p-2 text-center ${
-                        isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                      }`}
-                      style={{ height: '60px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
-                    >
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                        {weekdayNames[index]}
-                      </div>
+                
+                {/* Days column - sticky left */}
+                <div 
+                  className="bg-gray-50 dark:bg-gray-900/50 border-r border-gray-200 dark:border-gray-700"
+                  style={{ 
+                    position: 'sticky',
+                    left: 0,
+                    zIndex: 10,
+                    width: DAYS_COLUMN_WIDTH,
+                    height: CONTENT_HEIGHT,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  {weekDays.map((day, dayIndex) => {
+                    const isToday = toISODate(day) === toISODate(new Date());
+                    return (
                       <div
-                        className={`text-sm font-semibold ${
-                          isToday ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'
+                        key={`day-label-${dayIndex}`}
+                        className={`flex flex-col items-center justify-center border-b border-gray-200 dark:border-gray-700 ${
+                          isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                         }`}
+                        style={{ 
+                          width: DAYS_COLUMN_WIDTH,
+                          height: DAY_ROW_HEIGHT,
+                          flexShrink: 0,
+                        }}
                       >
-                        {day.getDate()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Scrollable hours grid - synced with header horizontally and days column vertically */}
-              <div 
-                ref={weekContentScrollRef}
-                onScroll={(e) => {
-                  handleContentScroll(e);
-                  handleContentVerticalScroll(e);
-                }}
-                className="flex flex-1 flex-col overflow-auto"
-                style={{ scrollbarWidth: 'thin', maxHeight: 'calc(100vh - 300px)' }}
-              >
-                {weekDays.map((day, dayIndex) => {
-                  const { sessions: daySessions, maxSlots } = sessionsByDay[dayIndex];
-                  const isToday = toISODate(day) === toISODate(new Date());
-                  
-                  return (
-                    <div
-                      key={day.toISOString()}
-                      className={`flex relative ${
-                        isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                      }`}
-                      style={{ height: `${maxSlots * 60}px` }}
-                    >
-                      {/* Hour slots with 4x4 grid each */}
-                      {timeSlots.map((hour) => (
-                        <div
-                          key={hour}
-                          className="flex-shrink-0 border-r border-gray-200 dark:border-gray-700 border-b border-gray-200 dark:border-gray-700 relative"
-                          style={{ 
-                            width: `${HOUR_COLUMN_WIDTH}px`, 
-                            height: '60px',
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(4, 1fr)',
-                            gridTemplateRows: 'repeat(4, 1fr)',
-                            gap: '1px',
-                          }}
-                        >
-                          {/* Mini-cells - invisible grid cells */}
-                          {Array.from({ length: 16 }).map((_, idx) => (
-                            <div
-                              key={idx}
-                              className="border-0"
-                              style={{ 
-                                minWidth: 0,
-                                minHeight: 0,
-                              }}
-                            />
-                          ))}
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {weekdayNames[dayIndex]}
                         </div>
-                      ))}
-                      
-                      {/* Sessions positioned using grid */}
-                      {daySessions.map((session) => {
-                        const client = clients.find((c) => c.id === session.client_id);
-                        const paymentStatus = sessionStatuses.get(session.id);
-                        const isPaused = isSessionInPause(session);
-                        const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
-                        const gridPos = getSessionGridPosition(session, daySessions);
-                        
-                        // Skip sessions that start before 6:00 or after 23:00 or if position calculation failed
-                        const [hours] = session.start_time.split(':').map(Number);
-                        if (hours < 6 || hours > 23 || !gridPos) return null;
-                        
-                        const { startSlotIndex, slot1Column, slot1Row, slot1ColumnSpan, slot1RowSpan, spansSlots } = gridPos;
-                        
-                        // Calculate absolute position
-                        const slotLeft = startSlotIndex * HOUR_COLUMN_WIDTH;
-                        const slotTop = 0; // All slots start at top of day row
-                        
-                        // Calculate position within the grid
-                        // Each mini-cell is 1/4 of the hour cell
-                        const miniCellWidth = HOUR_COLUMN_WIDTH / 4;
-                        const miniCellHeight = 60 / 4;
-                        
-                        let left: number;
-                        let width: number;
-                        let top: number;
-                        let height: number;
-                        
-                        if (spansSlots === 2) {
-                          // Session spans 2 slots (e.g., 9:30)
-                          // Starts from middle of first slot, ends at middle of second slot
-                          const nextSlotLeft = (startSlotIndex + 1) * HOUR_COLUMN_WIDTH;
-                          
-                          // Start from middle of first slot (right half)
-                          left = slotLeft + (HOUR_COLUMN_WIDTH / 2);
-                          // End at middle of second slot (left half)
-                          // Width spans exactly one hour column width (from middle 9:00 to middle 10:00)
-                          width = (nextSlotLeft + (HOUR_COLUMN_WIDTH / 2)) - left;
-                          
-                          // Vertical: occupies 1 mini-cell row in each slot, but spans both slots
-                          // Position based on slot1Row (which is below :00 sessions)
-                          top = slotTop + ((slot1Row - 1) * miniCellHeight);
-                          height = miniCellHeight * 2; // Height spans both slots (1 mini-cell in each)
-                        } else {
-                          // Session in single slot
-                          // Can span multiple columns and rows if it's the only session
-                          left = slotLeft + ((slot1Column - 1) * miniCellWidth);
-                          width = miniCellWidth * (slot1ColumnSpan || 1); // Span multiple columns if single session
-                          top = slotTop + ((slot1Row - 1) * miniCellHeight);
-                          height = miniCellHeight * (slot1RowSpan || 1); // Span multiple rows if single session
-                        }
-                        
-                        // Add gaps between sessions (4px)
-                        const GAP_SIZE = 4;
-                        if (spansSlots === 2) {
-                          // For :30 sessions spanning 2 slots
-                          left += GAP_SIZE / 2;
-                          width -= GAP_SIZE;
-                          top += GAP_SIZE / 2;
-                          height -= GAP_SIZE;
-                        } else {
-                          // For :00 sessions in single slot
-                          left += GAP_SIZE / 2;
-                          width -= GAP_SIZE;
-                          top += GAP_SIZE / 2;
-                          height -= GAP_SIZE;
-                        }
-                        
-                        // Determine z-index: :00 sessions should be above :30 sessions if they overlap
-                        const [, sessionMinutes] = session.start_time.split(':').map(Number);
-                        const zIndex = sessionMinutes === 30 ? 1 : 2; // :00 sessions above :30 sessions
-                        
-                        return (
+                        <div
+                          className={`text-sm font-semibold ${
+                            isToday ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'
+                          }`}
+                        >
+                          {day.getDate()}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Content grid */}
+                <div 
+                  style={{ 
+                    width: CONTENT_WIDTH,
+                    height: CONTENT_HEIGHT,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  {weekDays.map((day, dayIndex) => {
+                    const daySessions = sessionsByDay[dayIndex];
+                    const isToday = toISODate(day) === toISODate(new Date());
+                    
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        className={`relative border-b border-gray-200 dark:border-gray-700 ${
+                          isToday ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        }`}
+                        style={{ 
+                          width: CONTENT_WIDTH,
+                          height: DAY_ROW_HEIGHT,
+                          flexShrink: 0,
+                          display: 'flex',
+                        }}
+                      >
+                        {/* Hour cells with grid lines */}
+                        {timeSlots.map((hour) => (
                           <div
-                            key={session.id}
-                            onClick={() => handleSessionSelect(session)}
-                            className={`absolute rounded p-1 ${colorClasses} cursor-pointer hover:opacity-80 overflow-hidden text-xs shadow-sm`}
-                            style={{
-                              left: `${left}px`,
-                              width: `${width}px`,
-                              top: `${top}px`,
-                              height: `${height}px`,
-                              zIndex: zIndex,
+                            key={hour}
+                            className="flex-shrink-0 border-r border-gray-200 dark:border-gray-700"
+                            style={{ 
+                              width: HOUR_WIDTH,
+                              height: DAY_ROW_HEIGHT,
                             }}
-                            title={`${formatTime(session.start_time)} - ${client?.full_name || 'Неизвестный клиент'}`}
-                          >
-                            {/* Time with icons */}
-                            <div className="font-semibold truncate flex items-center gap-1">
-                              {hasNotes(session) && (
-                                <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                              )}
-                              {isCustomEdited(session) && (
-                                <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              )}
-                              {formatTime(session.start_time)}
+                          />
+                        ))}
+                        
+                        {/* Sessions positioned absolutely */}
+                        {daySessions.map((session) => {
+                          const client = clients.find((c) => c.id === session.client_id);
+                          const paymentStatus = sessionStatuses.get(session.id);
+                          const isPaused = isSessionInPause(session);
+                          const colorClasses = getSessionColorClasses(paymentStatus, isPaused);
+                          const position = calculateSessionPosition(session, daySessions);
+                          
+                          // Skip sessions outside time range
+                          const [hours] = session.start_time.split(':').map(Number);
+                          if (hours < 6 || hours > 23 || !position) return null;
+                          
+                          // Apply gaps
+                          const left = position.left + GAP_SIZE / 2;
+                          const width = position.width - GAP_SIZE;
+                          const top = position.top + GAP_SIZE / 2;
+                          const height = position.height - GAP_SIZE;
+                          
+                          // Constrain to prevent overflow
+                          const constrainedLeft = Math.max(0, Math.min(left, CONTENT_WIDTH - width));
+                          const constrainedTop = Math.max(0, Math.min(top, DAY_ROW_HEIGHT - height));
+                          const constrainedWidth = Math.max(0, Math.min(width, CONTENT_WIDTH - constrainedLeft));
+                          const constrainedHeight = Math.max(0, Math.min(height, DAY_ROW_HEIGHT - constrainedTop));
+                          
+                          return (
+                            <div
+                              key={session.id}
+                              onClick={() => handleSessionSelect(session)}
+                              className={`absolute rounded ${colorClasses} cursor-pointer hover:opacity-80 overflow-hidden shadow-sm`}
+                              style={{
+                                left: constrainedLeft,
+                                top: constrainedTop,
+                                width: constrainedWidth,
+                                height: constrainedHeight,
+                                zIndex: 5,
+                                padding: height > 20 ? '2px 4px' : '0 2px',
+                                fontSize: height > 20 ? '10px' : '8px',
+                                lineHeight: height > 20 ? '1.2' : '1',
+                                display: 'flex',
+                                flexDirection: height > 20 ? 'column' : 'row',
+                                alignItems: height > 20 ? 'flex-start' : 'center',
+                                gap: height > 20 ? 0 : 4,
+                              }}
+                              title={`${formatTime(session.start_time)} - ${client?.full_name || 'Неизвестный клиент'}`}
+                            >
+                              {/* Time with icons */}
+                              <div className="font-semibold truncate flex items-center gap-0.5 flex-shrink-0">
+                                {hasNotes(session) && (
+                                  <svg className="w-2 h-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                )}
+                                {isCustomEdited(session) && (
+                                  <svg className="w-2 h-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                )}
+                                <span>{formatTime(session.start_time)}</span>
+                              </div>
+                              {/* Client name */}
+                              <div className="truncate overflow-hidden whitespace-nowrap flex-1 min-w-0">
+                                {client?.full_name || 'Неизвестный'}
+                              </div>
                             </div>
-                            {/* Client name */}
-                            <div className="truncate overflow-hidden whitespace-nowrap">
-                              {client?.full_name || 'Неизвестный'}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -879,7 +799,7 @@ export function CalendarScreen() {
 
       {/* Day View */}
       {view === 'day' && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden w-full max-w-full">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="text-lg font-semibold text-gray-900 dark:text-white">
               {format(currentDate, 'EEEE, d MMMM yyyy', { locale: ru })}
