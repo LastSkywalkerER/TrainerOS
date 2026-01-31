@@ -1,17 +1,27 @@
 # Trainer OS
 
-Приложение для учёта клиентов, расписания и оплат для тренеров. Полностью офлайн PWA-приложение с локальным хранением данных.
+**English:**
 
-## Особенности
+Trainer OS streamlines your fitness coaching business by automating the most time-consuming administrative tasks. Stop juggling spreadsheets, notebooks, and payment tracking—everything you need is in one place, accessible right from your phone, even when you're offline in the gym or at a client's location.
 
-- 📱 **Mobile-first дизайн** - оптимизировано для смартфонов, адаптивно для планшетов и десктопов
-- 🔌 **Офлайн-работа** - полностью работает без интернета
-- 💾 **Локальное хранение** - все данные хранятся в IndexedDB на устройстве
-- 📅 **Управление расписанием** - автоматическая генерация занятий из шаблонов
-- 💰 **Учёт оплат** - автоматическое и ручное распределение платежей
-- 📊 **Аналитика** - расчёты долгов, балансов и статистики
+The app simplifies your daily workflow: automatically generate recurring lessons from your schedule templates, track payments and distribute them across sessions, monitor client balances and outstanding debts, and get instant insights into your business performance. Your client data stays private and secure on your device, while you focus on what matters most—coaching.
 
-## Технологии
+**Русский:**
+
+Trainer OS упрощает управление фитнес-бизнесом, автоматизируя самые трудоёмкие административные задачи. Забудьте о таблицах, блокнотах и ручном учёте платежей—всё необходимое в одном месте, доступно прямо с телефона, даже без интернета в зале или у клиента.
+
+Приложение упрощает ежедневную работу: автоматически создаёт повторяющиеся занятия из шаблонов расписания, отслеживает платежи и распределяет их по сессиям, контролирует балансы клиентов и задолженности, предоставляет моментальную аналитику бизнеса. Данные клиентов остаются приватными и безопасными на вашем устройстве, пока вы сосредоточены на главном—тренировках.
+
+## Features
+
+- 📱 **Mobile-first design** - optimized for smartphones, adaptive for tablets and desktops
+- 🔌 **Offline operation** - fully functional without internet connection
+- 💾 **Local storage** - all data stored in IndexedDB on device
+- 📅 **Schedule management** - automatic lesson generation from templates
+- 💰 **Payment tracking** - automatic and manual payment distribution
+- 📊 **Analytics** - debt calculations, balances, and statistics
+
+## Technologies
 
 - React 18 + TypeScript
 - Vite
@@ -20,78 +30,78 @@
 - PWA (Progressive Web App)
 - date-fns
 
-## Установка и запуск
+## Installation and Running
 
 ```bash
-# Установка зависимостей
+# Install dependencies
 npm install
 
-# Генерация иконок PWA (из SVG в PNG разных размеров)
+# Generate PWA icons (from SVG to PNG of various sizes)
 npm run generate-icons
 
-# Запуск в режиме разработки
+# Run in development mode
 npm run dev
 
-# Сборка для продакшена
+# Build for production
 npm run build
 
-# Просмотр продакшен-сборки
+# Preview production build
 npm run preview
 ```
 
-## Структура проекта
+## Project Structure
 
 ```
 trainer-os/
 ├── src/
-│   ├── db/              # База данных (IndexedDB схема и типы)
-│   ├── services/        # Доменные сервисы
-│   ├── components/      # React компоненты
-│   ├── screens/         # Экраны приложения
-│   ├── utils/           # Утилиты (расчёты, даты, валидация)
-│   ├── App.tsx          # Главный компонент
-│   └── main.tsx         # Точка входа
-├── public/              # Статические файлы (manifest, icons)
+│   ├── db/              # Database (IndexedDB schema and types)
+│   ├── services/        # Domain services
+│   ├── components/      # React components
+│   ├── screens/         # Application screens
+│   ├── utils/           # Utilities (calculations, dates, validation)
+│   ├── App.tsx          # Main component
+│   └── main.tsx         # Entry point
+├── public/              # Static files (manifest, icons)
 └── package.json
 ```
 
-## Основные функции
+## Core Features
 
-### Управление клиентами
-- Создание и редактирование клиентов
-- Статусы: активный, на паузе, архив
-- Контакты и заметки
+### Client Management
+- Create and edit clients
+- Statuses: active, on pause, archived
+- Contacts and notes
 
-### Расписание
-- Создание шаблонов расписания (дни недели + время)
-- Автоматическая генерация занятий на N дней вперёд
-- Ручное создание и редактирование занятий
-- Перенос и отмена занятий
+### Schedule
+- Create schedule templates (weekdays + time)
+- Automatic lesson generation for N days ahead
+- Manual creation and editing of lessons
+- Rescheduling and cancellation of lessons
 
-### Платежи
-- Создание платежей с указанием метода оплаты
-- Автоматическое распределение на неоплаченные занятия
-- Ручное распределение платежей
-- Частичная оплата занятий
+### Payments
+- Create payments with payment method specification
+- Automatic distribution to unpaid lessons
+- Manual payment distribution
+- Partial lesson payment
 
-### Пакеты занятий
-- Создание пакетов (например, "8 занятий = 2000 BYN")
-- Автоматический расчёт цены занятия из пакета
-- Переопределение цены для отдельных занятий
+### Lesson Packages
+- Create packages (e.g., "8 lessons = 2000 BYN")
+- Automatic lesson price calculation from package
+- Override price for individual lessons
 
-### Расчёты и аналитика
-- Статусы оплаты занятий (оплачено, частично оплачено, не оплачено)
-- Расчёт долгов и балансов клиентов
-- Общая статистика по месяцам
-- Список клиентов с долгами
+### Calculations and Analytics
+- Lesson payment statuses (paid, partially paid, unpaid)
+- Client debt and balance calculations
+- Monthly statistics overview
+- List of clients with debts
 
 ## PWA
 
-Приложение поддерживает установку как PWA:
-- Добавление на домашний экран
-- Офлайн-работа
-- Кэширование ресурсов через Service Worker
+The application supports installation as a PWA:
+- Add to home screen
+- Offline operation
+- Resource caching via Service Worker
 
-## Лицензия
+## License
 
 MIT
