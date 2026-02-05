@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Client, Payment, ClientMonthlyStats } from '../db/types';
+import { Client, Payment, ClientMonthlyStats, CalendarSession } from '../db/types';
 import { analyticsService } from '../services/AnalyticsService';
 import { ClientStats } from '../db/types';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, formatTime } from '../utils/dateUtils';
 import { ClientScheduleForm } from './ClientScheduleForm';
 import { PaymentForm } from './PaymentForm';
 import { PauseDialog } from './PauseDialog';
 import { ArchiveDialog } from './ArchiveDialog';
+import { SessionDetails } from './SessionDetails';
 import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
 import { scheduleService } from '../services/ScheduleService';
+import { calendarSessionService } from '../services/CalendarSessionService';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { TutorialGuide, TutorialStep } from './TutorialGuide';
@@ -25,7 +27,7 @@ interface ClientProfileProps {
   showTutorialOnMount?: boolean;
 }
 
-type Tab = 'info' | 'schedule' | 'payments' | 'stats';
+type Tab = 'info' | 'schedule' | 'sessions' | 'payments' | 'stats';
 
 export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialTab = 'info', showTutorialOnMount = false }: ClientProfileProps) {
   const { getTriggeredPage, clearTrigger } = useTutorial();
@@ -38,6 +40,9 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [currentClient, setCurrentClient] = useState<Client>(client);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [sessions, setSessions] = useState<CalendarSession[]>([]);
+  const [selectedSession, setSelectedSession] = useState<CalendarSession | null>(null);
+  const [hideEmptyNotes, setHideEmptyNotes] = useState(true);
 
   const tutorialSteps: TutorialStep[] = [
     {
@@ -65,6 +70,9 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     }
     if (activeTab === 'stats') {
       loadMonthlyStats();
+    }
+    if (activeTab === 'sessions') {
+      loadSessions();
     }
   }, [currentClient.id, activeTab]);
 
@@ -115,6 +123,15 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     setPayments(clientPayments);
   }
 
+  async function loadSessions() {
+    const clientSessions = await calendarSessionService.getByClient(currentClient.id);
+    // Sort by date descending and filter out canceled sessions
+    const sortedSessions = clientSessions
+      .filter(s => s.status !== 'canceled')
+      .sort((a, b) => b.date.localeCompare(a.date) || b.start_time.localeCompare(a.start_time));
+    setSessions(sortedSessions);
+  }
+
   const handleHelpClick = () => {
     setShowTutorial(true);
     // Don't mark as completed when triggered manually
@@ -153,7 +170,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
 
         {/* Tabs */}
         <div id="tutorial-tabs" data-tutorial-id="tutorial-tabs" className="flex border-b border-gray-200 dark:border-gray-700">
-          {(['info', 'schedule', 'payments', 'stats'] as Tab[]).map((tab) => (
+          {(['info', 'schedule', 'sessions', 'payments', 'stats'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -163,7 +180,7 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
                   : 'text-gray-600 dark:text-gray-400'
               }`}
             >
-              {tab === 'info' ? 'Информация' : tab === 'schedule' ? 'Расписание' : tab === 'payments' ? 'Платежи' : 'Расчёты'}
+              {tab === 'info' ? 'Информация' : tab === 'schedule' ? 'Расписание' : tab === 'sessions' ? 'Занятия' : tab === 'payments' ? 'Платежи' : 'Расчёты'}
             </button>
           ))}
         </div>
@@ -281,6 +298,79 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
 
         {activeTab === 'schedule' && (
           <ClientScheduleForm clientId={currentClient.id} />
+        )}
+
+        {activeTab === 'sessions' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Занятия</h2>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hideEmptyNotes}
+                  onChange={(e) => setHideEmptyNotes(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Скрыть без заметок</span>
+              </label>
+            </div>
+            
+            {(() => {
+              const filteredSessions = hideEmptyNotes 
+                ? sessions.filter(s => s.notes && s.notes.trim() !== '' && s.notes !== '<p></p>')
+                : sessions;
+              
+              return filteredSessions.length === 0 ? (
+                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  {hideEmptyNotes && sessions.length > 0
+                    ? 'Нет занятий с заметками.'
+                    : 'Нет занятий. Занятия появятся после настройки расписания.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      onClick={() => setSelectedSession(session)}
+                      className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow cursor-pointer hover:shadow-md transition-shadow"
+                    >
+                      <div className="font-medium text-gray-900 dark:text-white mb-2">
+                        {formatDate(session.date)} в {formatTime(session.start_time)}
+                      </div>
+                      {session.notes && session.notes.trim() !== '' && session.notes !== '<p></p>' ? (
+                        <div 
+                          className="tiptap ProseMirror text-sm text-gray-900 dark:text-white max-w-none"
+                          style={{ minHeight: 'auto', padding: 0 }}
+                          dangerouslySetInnerHTML={{ __html: session.notes }}
+                        />
+                      ) : (
+                        <div className="text-sm text-gray-400 dark:text-gray-500 italic">
+                          Нет заметок
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {selectedSession && (
+          <SessionDetails
+            session={selectedSession}
+            client={currentClient}
+            onClose={() => setSelectedSession(null)}
+            onEdit={() => {}}
+            onCancel={async () => {
+              await calendarSessionService.cancel(selectedSession.id);
+              setSelectedSession(null);
+              loadSessions();
+            }}
+            onNotesSaved={(updated) => {
+              setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+            }}
+          />
         )}
 
         {activeTab === 'payments' && (
