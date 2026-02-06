@@ -64,7 +64,8 @@ async function initDatabase(): Promise<TrainerOSDatabase> {
   const db = await createRxDatabase<TrainerOSCollections>({
     name: DB_NAME,
     storage,
-    ignoreDuplicate: true,
+    // ignoreDuplicate is only allowed in dev-mode (for HMR)
+    ignoreDuplicate: import.meta.env.DEV,
   });
 
   await db.addCollections({
