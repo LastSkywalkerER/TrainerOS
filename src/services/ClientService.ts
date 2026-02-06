@@ -1,6 +1,12 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import { Client, CreateClientDto, ClientStatus } from '../db/types';
 import { generateId } from '../utils/uuid';
+import {
+  toDbDate,
+  toClientEntity,
+  clientToDb,
+  stripUndefined,
+} from '../db/dateHelpers';
 
 export class ClientService {
   async create(clientData: CreateClientDto): Promise<Client> {
@@ -17,35 +23,38 @@ export class ClientService {
       updated_at: now,
     };
 
-    await db.clients.add(client);
+    const db = await getDb();
+    await db.clients.insert(stripUndefined(clientToDb(client)));
     return client;
   }
 
   async update(id: string, updates: Partial<Client>): Promise<Client> {
-    const client = await db.clients.get(id);
-    if (!client) {
+    const db = await getDb();
+    const doc = await db.clients.findOne(id).exec();
+    if (!doc) {
       throw new Error(`Client with id ${id} not found`);
     }
 
+    const current = toClientEntity(doc.toJSON());
     const updated: Client = {
-      ...client,
+      ...current,
       ...updates,
       updated_at: new Date(),
     };
 
-    await db.clients.update(id, updated);
+    await doc.patch(stripUndefined(clientToDb(updated)));
     return updated;
   }
 
   async archive(id: string, archiveDate: Date): Promise<void> {
-    await this.update(id, { 
+    await this.update(id, {
       status: 'archived',
       archive_date: archiveDate,
     });
   }
 
   async pause(id: string, pauseFrom: Date, pauseTo: Date): Promise<void> {
-    await this.update(id, { 
+    await this.update(id, {
       status: 'paused',
       pause_from: pauseFrom,
       pause_to: pauseTo,
@@ -53,24 +62,51 @@ export class ClientService {
   }
 
   async resume(id: string): Promise<void> {
-    await this.update(id, { 
+    const db = await getDb();
+    const doc = await db.clients.findOne(id).exec();
+    if (!doc) {
+      throw new Error(`Client with id ${id} not found`);
+    }
+
+    const current = toClientEntity(doc.toJSON());
+    const updated: Client = {
+      ...current,
       status: 'active',
       pause_from: undefined,
       pause_to: undefined,
-      archive_date: undefined, // Clear archive_date when resuming
+      archive_date: undefined,
+      updated_at: new Date(),
+    };
+
+    // RxDB doesn't support undefined fields in patch, so we use modify
+    await doc.modify((docData: any) => {
+      docData.status = 'active';
+      docData.updated_at = toDbDate(new Date());
+      delete docData.pause_from;
+      delete docData.pause_to;
+      delete docData.archive_date;
+      return docData;
     });
+
+    // Return for consistency even though we don't use the return value
+    void updated;
   }
 
   async getAll(filters?: { status?: ClientStatus }): Promise<Client[]> {
+    const db = await getDb();
+    let docs;
     if (filters?.status) {
-      return db.clients.where('status').equals(filters.status).toArray();
+      docs = await db.clients.find({ selector: { status: filters.status } }).exec();
+    } else {
+      docs = await db.clients.find().exec();
     }
-    return db.clients.toArray();
+    return docs.map((d: any) => toClientEntity(d.toJSON()));
   }
 
   async getById(id: string): Promise<Client | null> {
-    const client = await db.clients.get(id);
-    return client ?? null;
+    const db = await getDb();
+    const doc = await db.clients.findOne(id).exec();
+    return doc ? toClientEntity(doc.toJSON()) : null;
   }
 
   async delete(id: string): Promise<void> {
@@ -79,27 +115,43 @@ export class ClientService {
   }
 
   async hardDelete(id: string): Promise<void> {
-    // Hard delete - remove all related data
-    await db.transaction('rw', [db.clients, db.scheduleTemplates, db.calendarSessions, db.packages, db.payments, db.paymentAllocations], async () => {
-      // Get all related sessions
-      const sessions = await db.calendarSessions.where('client_id').equals(id).toArray();
-      const sessionIds = sessions.map(s => s.id);
+    const db = await getDb();
 
-      // Delete allocations for these sessions
-      await db.paymentAllocations.where('session_id').anyOf(sessionIds).delete();
+    // Get all related sessions
+    const sessions = await db.calendar_sessions.find({ selector: { client_id: id } }).exec();
+    const sessionIds = sessions.map((s: any) => s.id);
 
-      // Delete payments and their allocations
-      const payments = await db.payments.where('client_id').equals(id).toArray();
-      const paymentIds = payments.map(p => p.id);
-      await db.paymentAllocations.where('payment_id').anyOf(paymentIds).delete();
+    // Delete allocations for these sessions
+    if (sessionIds.length > 0) {
+      const allAllocations = await db.payment_allocations.find({
+        selector: { session_id: { $in: sessionIds } },
+      }).exec();
+      await Promise.all(allAllocations.map((a: any) => a.remove()));
+    }
 
-      // Delete all related entities
-      await db.calendarSessions.where('client_id').equals(id).delete();
-      await db.scheduleTemplates.where('client_id').equals(id).delete();
-      await db.packages.where('client_id').equals(id).delete();
-      await db.payments.where('client_id').equals(id).delete();
-      await db.clients.delete(id);
-    });
+    // Delete allocations for payments
+    const payments = await db.payments.find({ selector: { client_id: id } }).exec();
+    const paymentIds = payments.map((p: any) => p.id);
+    if (paymentIds.length > 0) {
+      const paymentAllocations = await db.payment_allocations.find({
+        selector: { payment_id: { $in: paymentIds } },
+      }).exec();
+      await Promise.all(paymentAllocations.map((a: any) => a.remove()));
+    }
+
+    // Delete all related entities
+    await Promise.all(sessions.map((s: any) => s.remove()));
+    const templates = await db.schedule_templates.find({ selector: { client_id: id } }).exec();
+    await Promise.all(templates.map((t: any) => t.remove()));
+    const packages = await db.packages.find({ selector: { client_id: id } }).exec();
+    await Promise.all(packages.map((p: any) => p.remove()));
+    await Promise.all(payments.map((p: any) => p.remove()));
+
+    // Delete client
+    const clientDoc = await db.clients.findOne(id).exec();
+    if (clientDoc) {
+      await clientDoc.remove();
+    }
   }
 }
 

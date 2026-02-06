@@ -1,4 +1,4 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import {
   ClientStats,
   MonthlyStats,
@@ -8,23 +8,28 @@ import {
 import { calculateSessionPrice, getEffectiveAllocatedAmount } from '../utils/calculations';
 import { parseISO, startOfMonth, endOfMonth, isWithinInterval, format } from 'date-fns';
 import { isDateInRange } from '../utils/dateUtils';
+import {
+  toClientEntity,
+  toCalendarSessionEntity,
+  toPaymentEntity,
+  toPaymentAllocationEntity,
+} from '../db/dateHelpers';
 
 export class AnalyticsService {
   async getClientStats(clientId: string): Promise<ClientStats> {
-    const sessions = await db.calendarSessions
-      .where('client_id')
-      .equals(clientId)
-      .toArray();
+    const db = await getDb();
 
-    const payments = await db.payments
-      .where('client_id')
-      .equals(clientId)
-      .toArray();
+    const sessionDocs = await db.calendar_sessions.find({ selector: { client_id: clientId } }).exec();
+    const sessions = sessionDocs.map((d: any) => toCalendarSessionEntity(d.toJSON()));
 
-    const client = await db.clients.get(clientId);
-    if (!client) {
+    const paymentDocs = await db.payments.find({ selector: { client_id: clientId } }).exec();
+    const payments = paymentDocs.map((d: any) => toPaymentEntity(d.toJSON()));
+
+    const clientDoc = await db.clients.findOne(clientId).exec();
+    if (!clientDoc) {
       throw new Error(`Client with id ${clientId} not found`);
     }
+    const client = toClientEntity(clientDoc.toJSON());
 
     let total_sessions = 0;
     let paid_sessions = 0;
@@ -33,7 +38,6 @@ export class AnalyticsService {
     let total_debt = 0;
     let nextUnpaidSession: CalendarSession | null = null;
 
-    // Helper function to check if session is in pause period
     const isSessionInPause = (session: CalendarSession): boolean => {
       if (!client.pause_from || !client.pause_to) {
         return false;
@@ -42,14 +46,11 @@ export class AnalyticsService {
       return isDateInRange(sessionDate, client.pause_from, client.pause_to);
     };
 
-    // Calculate effective allocated amounts considering unallocated balance
-    // This distributes positive balance automatically to unpaid sessions
     for (const session of sessions) {
       if (session.status === 'canceled') {
         continue;
       }
 
-      // Skip sessions in pause period - they don't count towards debt
       if (isSessionInPause(session)) {
         continue;
       }
@@ -69,7 +70,6 @@ export class AnalyticsService {
         total_debt += price;
       }
 
-      // Find next unpaid session (using effective allocated)
       if (!nextUnpaidSession && effectiveAllocated < price) {
         const sessionDate = parseISO(session.date);
         const now = new Date();
@@ -88,10 +88,11 @@ export class AnalyticsService {
     const total_paid = payments.reduce((sum, p) => sum + p.amount, 0);
 
     // Calculate total allocated (real allocations)
-    const allocations = await db.paymentAllocations.toArray();
-    const clientSessions = sessions.map((s) => s.id);
-    const total_allocated = allocations
-      .filter((a) => clientSessions.includes(a.session_id))
+    const allAllocationDocs = await db.payment_allocations.find().exec();
+    const allAllocations = allAllocationDocs.map((d: any) => toPaymentAllocationEntity(d.toJSON()));
+    const clientSessionIds = sessions.map((s) => s.id);
+    const total_allocated = allAllocations
+      .filter((a) => clientSessionIds.includes(a.session_id))
       .reduce((sum, a) => sum + a.allocated_amount, 0);
 
     // Calculate total effective allocated (with balance distribution)
@@ -100,7 +101,6 @@ export class AnalyticsService {
       if (session.status === 'canceled') {
         continue;
       }
-      // Skip sessions in pause period - they don't count towards allocated amount
       if (isSessionInPause(session)) {
         continue;
       }
@@ -108,13 +108,7 @@ export class AnalyticsService {
       total_effective_allocated += effectiveAllocated;
     }
 
-    // Balance should be calculated based on effective allocated amount
-    // This represents the remaining unallocated balance after virtual distribution
     const balance = Math.max(0, total_paid - total_effective_allocated);
-
-    // Since we're using effective allocated amounts (which already account for balance),
-    // total_debt already reflects the distribution of balance
-    // So we don't need to subtract balance again
     const net_debt = Math.max(0, total_debt);
 
     return {
@@ -151,13 +145,13 @@ export class AnalyticsService {
   async getMonthlyStats(month: Date): Promise<MonthlyStats> {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
+    const db = await getDb();
 
-    const allClients = await db.clients
-      .where('status')
-      .equals('active')
-      .toArray();
+    const clientDocs = await db.clients.find({ selector: { status: 'active' } }).exec();
+    const allClients = clientDocs.map((d: any) => toClientEntity(d.toJSON()));
 
-    const allSessions = await db.calendarSessions.toArray();
+    const sessionDocs = await db.calendar_sessions.find().exec();
+    const allSessions = sessionDocs.map((d: any) => toCalendarSessionEntity(d.toJSON()));
     const monthSessions = allSessions.filter((s) => {
       const sessionDate = parseISO(s.date);
       return isWithinInterval(sessionDate, {
@@ -166,7 +160,8 @@ export class AnalyticsService {
       });
     });
 
-    const allPayments = await db.payments.toArray();
+    const paymentDocs = await db.payments.find().exec();
+    const allPayments = paymentDocs.map((d: any) => toPaymentEntity(d.toJSON()));
     const monthPayments = allPayments.filter((p) => {
       return isWithinInterval(p.paid_at, {
         start: monthStart,
@@ -179,7 +174,6 @@ export class AnalyticsService {
       0
     );
 
-    // Calculate total debt for active clients
     let total_debt = 0;
     for (const client of allClients) {
       const debt = await this.getClientDebt(client.id);
@@ -196,20 +190,19 @@ export class AnalyticsService {
   }
 
   async getClientMonthlyStats(clientId: string): Promise<ClientMonthlyStats[]> {
-    const sessions = await db.calendarSessions
-      .where('client_id')
-      .equals(clientId)
-      .toArray();
+    const db = await getDb();
 
-    const payments = await db.payments
-      .where('client_id')
-      .equals(clientId)
-      .toArray();
+    const sessionDocs = await db.calendar_sessions.find({ selector: { client_id: clientId } }).exec();
+    const sessions = sessionDocs.map((d: any) => toCalendarSessionEntity(d.toJSON()));
 
-    const allocations = await db.paymentAllocations.toArray();
-    const clientSessions = sessions.map((s) => s.id);
-    const clientAllocations = allocations.filter((a) =>
-      clientSessions.includes(a.session_id)
+    const paymentDocs = await db.payments.find({ selector: { client_id: clientId } }).exec();
+    const payments = paymentDocs.map((d: any) => toPaymentEntity(d.toJSON()));
+
+    const allAllocationDocs = await db.payment_allocations.find().exec();
+    const allAllocations = allAllocationDocs.map((d: any) => toPaymentAllocationEntity(d.toJSON()));
+    const clientSessionIds = sessions.map((s) => s.id);
+    const clientAllocations = allAllocations.filter((a) =>
+      clientSessionIds.includes(a.session_id)
     );
 
     // Group sessions and payments by month
@@ -258,7 +251,6 @@ export class AnalyticsService {
       monthlyData.get(monthKey)!.payments.push(payment);
     }
 
-    // Add allocations to their respective months based on session dates
     for (const allocation of clientAllocations) {
       const session = sessions.find((s) => s.id === allocation.session_id);
       if (!session) continue;
@@ -271,7 +263,6 @@ export class AnalyticsService {
       }
     }
 
-    // Calculate stats for each month using effective allocated amounts (with balance distribution)
     const result: ClientMonthlyStats[] = [];
 
     for (const [, data] of monthlyData.entries()) {
@@ -282,7 +273,6 @@ export class AnalyticsService {
       let total_debt = 0;
       let total_effective_allocated = 0;
 
-      // Calculate stats for this month's sessions using effective allocated amounts
       for (const session of data.sessions) {
         total_sessions++;
         const effectiveAllocated = await getEffectiveAllocatedAmount(session.id, clientId);
@@ -311,11 +301,10 @@ export class AnalyticsService {
         partially_paid_sessions,
         total_debt,
         total_paid,
-        total_allocated: total_effective_allocated, // Use effective allocated for display
+        total_allocated: total_effective_allocated,
       });
     }
 
-    // Sort by month descending (most recent first)
     return result.sort((a, b) => b.month.getTime() - a.month.getTime());
   }
 }

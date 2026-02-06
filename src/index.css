@@ -258,6 +258,22 @@ html.dark .tiptap[contenteditable] {
   color: rgb(255, 255, 255) !important; /* white for dark mode */
 }
 
+/* Slide down animation for update prompt */
+@keyframes slide-down {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out;
+}
+
 /* Final override - maximum specificity for all text in dark mode editor */
 html.dark .tiptap.ProseMirror,
 html.dark .ProseMirror.tiptap,

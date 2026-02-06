@@ -1,30 +1,25 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import { calculateSessionStatus } from '../utils/calculations';
+import { toClientEntity } from '../db/dateHelpers';
 
 export class RecalculationService {
   async recalculateClient(clientId: string): Promise<void> {
-    // Get all sessions for the client
-    const sessions = await db.calendarSessions
-      .where('client_id')
-      .equals(clientId)
-      .toArray();
+    const db = await getDb();
+    const sessionDocs = await db.calendar_sessions.find({ selector: { client_id: clientId } }).exec();
 
-    // Recalculate each session
-    for (const session of sessions) {
-      await this.recalculateSession(session.id);
+    for (const doc of sessionDocs) {
+      await this.recalculateSession(doc.id);
     }
-
-    // Force analytics refresh (they are calculated on-demand, so this is just for cache invalidation if needed)
   }
 
   async recalculateSession(sessionId: string): Promise<void> {
-    // Status is calculated on-demand, so we don't need to store it
-    // But we can trigger any side effects here if needed
     await calculateSessionStatus(sessionId);
   }
 
   async recalculateAll(): Promise<void> {
-    const clients = await db.clients.toArray();
+    const db = await getDb();
+    const clientDocs = await db.clients.find().exec();
+    const clients = clientDocs.map((d: any) => toClientEntity(d.toJSON()));
     for (const client of clients) {
       await this.recalculateClient(client.id);
     }

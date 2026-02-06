@@ -1,16 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { CalendarScreen } from './screens/CalendarScreen';
 import { PaymentsScreen } from './screens/PaymentsScreen';
 import { SummaryScreen } from './screens/SummaryScreen';
-import { runMigrations } from './db/migrations';
 import { TutorialProvider, useTutorial } from './contexts/TutorialContext';
 import { ClientProfile } from './components/ClientProfile';
 import { ClientForm } from './components/ClientForm';
+import { UpdateLoader } from './components/UpdateLoader';
+import { UpdatePrompt } from './components/UpdatePrompt';
 import { clientService } from './services/ClientService';
 import { Client } from './db/types';
 import { tutorialService } from './services/TutorialService';
+import { getDb } from './db/rxdb';
+import { migrateDexieToRxDB } from './db/dexie-migration';
+import { saveAutoBackup } from './db/auto-backup';
+import { backupService } from './services/BackupService';
+import {
+  saveCurrentVersions,
+  isAppDowngraded,
+  isDbMigrationNeeded,
+} from './db/version';
+import { onUpdateAvailable } from './pwa/register-sw';
 
 function NavigationBar() {
   const location = useLocation();
@@ -84,7 +95,6 @@ function ClientProfileRoute() {
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Get initialTab from URL params
   const searchParams = new URLSearchParams(location.search);
   const initialTab = (searchParams.get('tab') as 'info' | 'schedule' | 'payments' | 'stats' | null) || undefined;
 
@@ -164,12 +174,11 @@ function HelpButton() {
   const handleClick = () => {
     const pathParts = location.pathname.split('/').filter(Boolean);
     let page = pathParts[0] || 'clients';
-    
-    // If we're on /clients/:id, treat it as client-profile
+
     if (pathParts[0] === 'clients' && pathParts[1] && pathParts[1] !== 'edit') {
       page = 'client-profile';
     }
-    
+
     triggerTutorial(page);
   };
 
@@ -187,12 +196,79 @@ function HelpButton() {
 }
 
 function AppContent() {
-  useEffect(() => {
-    runMigrations();
+  const [appReady, setAppReady] = useState(false);
+  const [loaderMessage, setLoaderMessage] = useState('Загрузка...');
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  const initApp = useCallback(async () => {
+    try {
+      // Step 1: Initialize RxDB
+      setLoaderMessage('Инициализация базы данных...');
+      const db = await getDb();
+
+      // Step 2: Check if this is an upgrade from Dexie
+      setLoaderMessage('Проверка обновлений базы данных...');
+      await migrateDexieToRxDB(db);
+
+      // Step 3: Check if the app was downgraded
+      if (isAppDowngraded()) {
+        console.warn('[App] App version downgrade detected. Data may need restoration from backup.');
+        // The user can manually restore from backup via the Summary screen.
+        // We don't auto-restore because the current data might be valid.
+      }
+
+      // Step 4: Check if DB migration is needed
+      if (isDbMigrationNeeded()) {
+        setLoaderMessage('Создание резервной копии...');
+        try {
+          const backupData = await backupService.exportAllData();
+          await saveAutoBackup(backupData);
+          console.log('[App] Pre-migration auto-backup saved');
+        } catch (e) {
+          console.error('[App] Failed to save pre-migration backup:', e);
+        }
+
+        setLoaderMessage('Обновление базы данных...');
+        // RxDB schema migrations are handled automatically when opening the database.
+        // At this point the DB is already open with the new schema.
+        // Data-level migrations would run here if needed.
+      }
+
+      // Step 5: Save current versions
+      saveCurrentVersions();
+
+      // App is ready
+      setAppReady(true);
+    } catch (error) {
+      console.error('[App] Initialization failed:', error);
+      setLoaderMessage('Ошибка инициализации. Попробуйте перезагрузить страницу.');
+    }
   }, []);
+
+  useEffect(() => {
+    initApp();
+  }, [initApp]);
+
+  // Listen for SW updates
+  useEffect(() => {
+    const unsubscribe = onUpdateAvailable((available) => {
+      setUpdateAvailable(available);
+    });
+    return unsubscribe;
+  }, []);
+
+  if (!appReady) {
+    return <UpdateLoader message={loaderMessage} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Update notification */}
+      <UpdatePrompt
+        visible={updateAvailable}
+        onDismiss={() => setUpdateAvailable(false)}
+      />
+
       {/* Main Content */}
       <main className="pb-20">
         <Routes>

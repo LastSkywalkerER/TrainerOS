@@ -1,10 +1,15 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import {
   CalendarSession,
   CreateSessionDto,
 } from '../db/types';
 import { generateId } from '../utils/uuid';
 import { format, parseISO } from 'date-fns';
+import {
+  toCalendarSessionEntity,
+  calendarSessionToDb,
+  stripUndefined,
+} from '../db/dateHelpers';
 
 export class CalendarSessionService {
   async createCustom(
@@ -25,7 +30,8 @@ export class CalendarSessionService {
       updated_at: now,
     };
 
-    await db.calendarSessions.add(calendarSession);
+    const db = await getDb();
+    await db.calendar_sessions.insert(stripUndefined(calendarSessionToDb(calendarSession)));
     return calendarSession;
   }
 
@@ -49,7 +55,8 @@ export class CalendarSessionService {
       updated_at: now,
     };
 
-    await db.calendarSessions.add(calendarSession);
+    const db = await getDb();
+    await db.calendar_sessions.insert(stripUndefined(calendarSessionToDb(calendarSession)));
     return calendarSession;
   }
 
@@ -57,15 +64,18 @@ export class CalendarSessionService {
     id: string,
     updates: Partial<CalendarSession>
   ): Promise<CalendarSession> {
-    const session = await db.calendarSessions.get(id);
-    if (!session) {
+    const db = await getDb();
+    const doc = await db.calendar_sessions.findOne(id).exec();
+    if (!doc) {
       throw new Error(`CalendarSession with id ${id} not found`);
     }
 
+    const session = toCalendarSessionEntity(doc.toJSON());
+
     // Check if main session parameters are being edited (not just notes or status)
-    const isEditingMainParams = 
-      'date' in updates || 
-      'start_time' in updates || 
+    const isEditingMainParams =
+      'date' in updates ||
+      'start_time' in updates ||
       'price_override' in updates ||
       'client_id' in updates;
 
@@ -77,7 +87,7 @@ export class CalendarSessionService {
       updated_at: new Date(),
     };
 
-    await db.calendarSessions.update(id, updated);
+    await doc.patch(stripUndefined(calendarSessionToDb(updated)));
     return updated;
   }
 
@@ -104,11 +114,12 @@ export class CalendarSessionService {
     clientId: string,
     filters?: { dateFrom?: Date; dateTo?: Date }
   ): Promise<CalendarSession[]> {
-    let query = db.calendarSessions.where('client_id').equals(clientId);
+    const db = await getDb();
+    const docs = await db.calendar_sessions.find({ selector: { client_id: clientId } }).exec();
+    let sessions = docs.map((d: any) => toCalendarSessionEntity(d.toJSON()));
 
     if (filters?.dateFrom || filters?.dateTo) {
-      const sessions = await query.toArray();
-      return sessions.filter((s) => {
+      sessions = sessions.filter((s) => {
         const sessionDate = parseISO(s.date);
         if (filters.dateFrom && sessionDate < filters.dateFrom) {
           return false;
@@ -120,21 +131,24 @@ export class CalendarSessionService {
       });
     }
 
-    return query.toArray();
+    return sessions;
   }
 
   async getByDateRange(
     dateFrom: Date,
     dateTo: Date
   ): Promise<CalendarSession[]> {
-    const sessions = await db.calendarSessions.toArray();
+    const db = await getDb();
     const fromDateStr = format(dateFrom, 'yyyy-MM-dd');
     const toDateStr = format(dateTo, 'yyyy-MM-dd');
-    
-    return sessions.filter((s) => {
-      // Compare date strings for exact date matching
-      return s.date >= fromDateStr && s.date <= toDateStr;
-    });
+
+    const docs = await db.calendar_sessions.find({
+      selector: {
+        date: { $gte: fromDateStr, $lte: toDateStr },
+      },
+    }).exec();
+
+    return docs.map((d: any) => toCalendarSessionEntity(d.toJSON()));
   }
 
   async checkConflicts(
@@ -142,22 +156,28 @@ export class CalendarSessionService {
     time: string,
     excludeSessionId?: string
   ): Promise<CalendarSession[]> {
-    const sessions = await db.calendarSessions
-      .where('date')
-      .equals(date)
-      .and((s) => s.start_time === time && s.status !== 'canceled')
-      .toArray();
+    const db = await getDb();
+    const docs = await db.calendar_sessions.find({
+      selector: {
+        date: date,
+        start_time: time,
+        status: { $ne: 'canceled' },
+      },
+    }).exec();
+
+    let sessions = docs.map((d: any) => toCalendarSessionEntity(d.toJSON()));
 
     if (excludeSessionId) {
-      return sessions.filter((s) => s.id !== excludeSessionId);
+      sessions = sessions.filter((s) => s.id !== excludeSessionId);
     }
 
     return sessions;
   }
 
   async getById(id: string): Promise<CalendarSession | null> {
-    const session = await db.calendarSessions.get(id);
-    return session ?? null;
+    const db = await getDb();
+    const doc = await db.calendar_sessions.findOne(id).exec();
+    return doc ? toCalendarSessionEntity(doc.toJSON()) : null;
   }
 }
 

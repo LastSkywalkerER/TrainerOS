@@ -1,8 +1,15 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import { Payment, CreatePaymentDto } from '../db/types';
 import { generateId } from '../utils/uuid';
 import { allocationService } from './AllocationService';
 import { isDateInRange } from '../utils/dateUtils';
+import {
+  toPaymentEntity,
+  toClientEntity,
+  toCalendarSessionEntity,
+  paymentToDb,
+  stripUndefined,
+} from '../db/dateHelpers';
 
 export class PaymentService {
   async create(
@@ -21,7 +28,8 @@ export class PaymentService {
       updated_at: now,
     };
 
-    await db.payments.add(paymentEntity);
+    const db = await getDb();
+    await db.payments.insert(stripUndefined(paymentToDb(paymentEntity)));
     return paymentEntity;
   }
 
@@ -29,32 +37,40 @@ export class PaymentService {
     id: string,
     updates: Partial<Payment>
   ): Promise<Payment> {
-    const payment = await db.payments.get(id);
-    if (!payment) {
+    const db = await getDb();
+    const doc = await db.payments.findOne(id).exec();
+    if (!doc) {
       throw new Error(`Payment with id ${id} not found`);
     }
 
+    const payment = toPaymentEntity(doc.toJSON());
     const updated: Payment = {
       ...payment,
       ...updates,
       updated_at: new Date(),
     };
 
-    await db.payments.update(id, updated);
+    await doc.patch(stripUndefined(paymentToDb(updated)));
     return updated;
   }
 
   async delete(id: string): Promise<void> {
+    const db = await getDb();
+
     // Delete all allocations first
-    const allocations = await db.paymentAllocations
-      .where('payment_id')
-      .equals(id)
-      .toArray();
+    const allocationDocs = await db.payment_allocations.find({
+      selector: { payment_id: id },
+    }).exec();
 
-    const sessionIds = allocations.map((a) => a.session_id);
+    const sessionIds = allocationDocs.map((a: any) => a.toJSON().session_id);
 
-    await db.paymentAllocations.where('payment_id').equals(id).delete();
-    await db.payments.delete(id);
+    await Promise.all(allocationDocs.map((a: any) => a.remove()));
+
+    // Delete the payment
+    const paymentDoc = await db.payments.findOne(id).exec();
+    if (paymentDoc) {
+      await paymentDoc.remove();
+    }
 
     // Recalculate affected sessions
     const { recalculateService } = await import('./RecalculationService');
@@ -64,34 +80,47 @@ export class PaymentService {
   }
 
   async getAllByClient(clientId: string): Promise<Payment[]> {
-    return db.payments
-      .where('client_id')
-      .equals(clientId)
-      .sortBy('paid_at');
+    const db = await getDb();
+    const docs = await db.payments.find({ selector: { client_id: clientId } }).exec();
+    const payments = docs.map((d: any) => toPaymentEntity(d.toJSON()));
+    payments.sort((a, b) => a.paid_at.getTime() - b.paid_at.getTime());
+    return payments;
   }
 
   async getAll(): Promise<Payment[]> {
-    return db.payments.orderBy('paid_at').reverse().toArray();
+    const db = await getDb();
+    const docs = await db.payments.find().exec();
+    const payments = docs.map((d: any) => toPaymentEntity(d.toJSON()));
+    payments.sort((a, b) => b.paid_at.getTime() - a.paid_at.getTime());
+    return payments;
   }
 
   async autoAllocate(paymentId: string): Promise<void> {
-    const payment = await db.payments.get(paymentId);
-    if (!payment) {
+    const db = await getDb();
+    const paymentDoc = await db.payments.findOne(paymentId).exec();
+    if (!paymentDoc) {
       throw new Error(`Payment with id ${paymentId} not found`);
     }
+    const payment = toPaymentEntity(paymentDoc.toJSON());
 
     // Get client to check pause period
-    const client = await db.clients.get(payment.client_id);
-    if (!client) {
+    const clientDoc = await db.clients.findOne(payment.client_id).exec();
+    if (!clientDoc) {
       return;
     }
+    const client = toClientEntity(clientDoc.toJSON());
 
     // Get unpaid sessions for the client, ordered by date
-    const sessions = await db.calendarSessions
-      .where('client_id')
-      .equals(payment.client_id)
-      .and((s) => s.status !== 'canceled')
-      .sortBy('date');
+    const sessionDocs = await db.calendar_sessions.find({
+      selector: {
+        client_id: payment.client_id,
+        status: { $ne: 'canceled' },
+      },
+    }).exec();
+
+    const sessions = sessionDocs
+      .map((d: any) => toCalendarSessionEntity(d.toJSON()))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     let remainingAmount = payment.amount;
 
@@ -104,7 +133,7 @@ export class PaymentService {
       if (client.pause_from && client.pause_to) {
         const sessionDate = new Date(session.date);
         if (isDateInRange(sessionDate, client.pause_from, client.pause_to)) {
-          continue; // Skip this session - it's in pause period
+          continue;
         }
       }
 

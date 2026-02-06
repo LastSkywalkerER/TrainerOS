@@ -9,6 +9,8 @@ import { tutorialService } from '../services/TutorialService';
 import { useTutorial } from '../contexts/TutorialContext';
 import { backupService } from '../services/BackupService';
 import { Snackbar } from '../components/Snackbar';
+import { APP_VERSION, DB_SCHEMA_VERSION } from '../db/version';
+import { checkForUpdate, forceRefresh, isSwSupported } from '../pwa/register-sw';
 
 export function SummaryScreen() {
   const navigate = useNavigate();
@@ -17,6 +19,7 @@ export function SummaryScreen() {
   const [clientsWithDebt, setClientsWithDebt] = useState<Array<{ client: Client; debt: number }>>([]);
   const [showTutorial, setShowTutorial] = useState(false);
   const [snackbar, setSnackbar] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const tutorialSteps: TutorialStep[] = [
@@ -125,22 +128,56 @@ export function SummaryScreen() {
     fileInputRef.current?.click();
   }
 
+  async function handleCheckUpdate() {
+    setCheckingUpdate(true);
+    try {
+      if (isSwSupported()) {
+        const found = await checkForUpdate();
+        if (found) {
+          setSnackbar({ message: 'Найдено обновление! Нажмите "Обновить" в появившемся баннере.', type: 'success' });
+        } else {
+          // No SW update found -- force clear caches and reload
+          setSnackbar({ message: 'Очистка кэша и перезагрузка...', type: 'success' });
+          setTimeout(() => forceRefresh(), 500);
+          return;
+        }
+      } else {
+        // SW not supported -- just clear caches and reload
+        await forceRefresh();
+        return;
+      }
+    } catch (error) {
+      console.error('Update check failed:', error);
+      setSnackbar({ message: 'Ошибка проверки обновлений', type: 'error' });
+    } finally {
+      setCheckingUpdate(false);
+      setTimeout(() => setSnackbar(null), 5000);
+    }
+  }
+
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Итоги</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
           <button
             onClick={handleExport}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
           >
-            Экспорт данных
+            Экспорт
           </button>
           <button
             onClick={handleImportClick}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm"
           >
-            Импорт данных
+            Импорт
+          </button>
+          <button
+            onClick={handleCheckUpdate}
+            disabled={checkingUpdate}
+            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-sm disabled:opacity-50"
+          >
+            {checkingUpdate ? 'Проверка...' : 'Обновить'}
           </button>
           <input
             ref={fileInputRef}
@@ -219,6 +256,11 @@ export function SummaryScreen() {
           tutorialService.markCompleted('summary');
         }}
       />
+
+      {/* App Version */}
+      <div className="text-center text-xs text-gray-400 dark:text-gray-600 mt-8 mb-4">
+        Trainer OS v{APP_VERSION} (DB v{DB_SCHEMA_VERSION})
+      </div>
 
       {/* Snackbar Notification */}
       <Snackbar

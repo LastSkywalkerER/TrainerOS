@@ -1,8 +1,13 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import { PaymentAllocation, AllocationDto } from '../db/types';
 import { generateId } from '../utils/uuid';
 import { calculateSessionStatus } from '../utils/calculations';
 import { recalculateService } from './RecalculationService';
+import {
+  toPaymentAllocationEntity,
+  paymentAllocationToDb,
+  stripUndefined,
+} from '../db/dateHelpers';
 
 export class AllocationService {
   async allocate(
@@ -14,19 +19,21 @@ export class AllocationService {
       throw new Error('Allocation amount must be positive');
     }
 
-    // Check if allocation already exists
-    const existing = await db.paymentAllocations
-      .where('[payment_id+session_id]')
-      .equals([paymentId, sessionId])
-      .first();
+    const db = await getDb();
 
-    if (existing) {
-      // Update existing allocation
+    // Check if allocation already exists
+    const existingDocs = await db.payment_allocations.find({
+      selector: { payment_id: paymentId, session_id: sessionId },
+    }).exec();
+
+    if (existingDocs.length > 0) {
+      const existingDoc = existingDocs[0];
+      const existing = toPaymentAllocationEntity(existingDoc.toJSON());
       const updated: PaymentAllocation = {
         ...existing,
         allocated_amount: existing.allocated_amount + amount,
       };
-      await db.paymentAllocations.update(existing.id, updated);
+      await existingDoc.patch(stripUndefined(paymentAllocationToDb(updated)));
       await recalculateService.recalculateSession(sessionId);
       return updated;
     }
@@ -40,19 +47,20 @@ export class AllocationService {
       created_at: new Date(),
     };
 
-    await db.paymentAllocations.add(allocation);
+    await db.payment_allocations.insert(stripUndefined(paymentAllocationToDb(allocation)));
     await recalculateService.recalculateSession(sessionId);
     return allocation;
   }
 
   async deallocate(allocationId: string): Promise<void> {
-    const allocation = await db.paymentAllocations.get(allocationId);
-    if (!allocation) {
+    const db = await getDb();
+    const doc = await db.payment_allocations.findOne(allocationId).exec();
+    if (!doc) {
       throw new Error(`Allocation with id ${allocationId} not found`);
     }
 
-    const sessionId = allocation.session_id;
-    await db.paymentAllocations.delete(allocationId);
+    const sessionId = doc.toJSON().session_id;
+    await doc.remove();
     await recalculateService.recalculateSession(sessionId);
   }
 
@@ -60,16 +68,17 @@ export class AllocationService {
     paymentId: string,
     allocations: AllocationDto[]
   ): Promise<void> {
+    const db = await getDb();
+
     // Remove existing allocations for this payment
-    const existing = await db.paymentAllocations
-      .where('payment_id')
-      .equals(paymentId)
-      .toArray();
+    const existingDocs = await db.payment_allocations.find({
+      selector: { payment_id: paymentId },
+    }).exec();
 
     const sessionIds = new Set<string>();
-    for (const alloc of existing) {
-      sessionIds.add(alloc.session_id);
-      await db.paymentAllocations.delete(alloc.id);
+    for (const doc of existingDocs) {
+      sessionIds.add(doc.toJSON().session_id);
+      await doc.remove();
     }
 
     // Create new allocations
@@ -85,17 +94,15 @@ export class AllocationService {
   }
 
   async getBySession(sessionId: string): Promise<PaymentAllocation[]> {
-    return db.paymentAllocations
-      .where('session_id')
-      .equals(sessionId)
-      .toArray();
+    const db = await getDb();
+    const docs = await db.payment_allocations.find({ selector: { session_id: sessionId } }).exec();
+    return docs.map((d: any) => toPaymentAllocationEntity(d.toJSON()));
   }
 
   async getByPayment(paymentId: string): Promise<PaymentAllocation[]> {
-    return db.paymentAllocations
-      .where('payment_id')
-      .equals(paymentId)
-      .toArray();
+    const db = await getDb();
+    const docs = await db.payment_allocations.find({ selector: { payment_id: paymentId } }).exec();
+    return docs.map((d: any) => toPaymentAllocationEntity(d.toJSON()));
   }
 
   async calculateSessionStatus(

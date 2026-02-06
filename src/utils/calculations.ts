@@ -1,7 +1,15 @@
-import { db } from '../db/database';
+import { getDb } from '../db/rxdb';
 import { CalendarSession } from '../db/types';
 import { parseISO } from 'date-fns';
 import { isDateInRange } from './dateUtils';
+import {
+  toCalendarSessionEntity,
+  toScheduleTemplateEntity,
+  toPackageEntity,
+  toPaymentEntity,
+  toClientEntity,
+  toPaymentAllocationEntity,
+} from '../db/dateHelpers';
 
 export type PaymentStatus = 'paid' | 'partially_paid' | 'unpaid';
 
@@ -9,10 +17,12 @@ export async function calculateSessionPrice(
   clientId: string,
   sessionId: string
 ): Promise<number> {
-  const session = await db.calendarSessions.get(sessionId);
-  if (!session) {
+  const db = await getDb();
+  const doc = await db.calendar_sessions.findOne(sessionId).exec();
+  if (!doc) {
     return 0;
   }
+  const session = toCalendarSessionEntity(doc.toJSON());
 
   // Price override has priority
   if (session.price_override !== undefined && session.price_override !== null) {
@@ -21,11 +31,13 @@ export async function calculateSessionPrice(
 
   // Check base_price from schedule rule if session was generated from template
   if (session.template_rule_id) {
-    const templates = await db.scheduleTemplates
-      .where('client_id')
-      .equals(clientId)
-      .sortBy('created_at');
-    
+    const templateDocs = await db.schedule_templates.find({
+      selector: { client_id: clientId },
+    }).exec();
+    const templates = templateDocs
+      .map((d: any) => toScheduleTemplateEntity(d.toJSON()))
+      .sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+
     if (templates.length > 0) {
       const template = templates[templates.length - 1];
       const rule = template.rules.find((r) => r.rule_id === session.template_rule_id);
@@ -36,35 +48,36 @@ export async function calculateSessionPrice(
   }
 
   // Get active package
-  const activePackage = await db.packages
-    .where('client_id')
-    .equals(clientId)
-    .and((p) => p.status === 'active')
-    .sortBy('created_at');
+  const packageDocs = await db.packages.find({
+    selector: { client_id: clientId, status: 'active' },
+  }).exec();
+  const activePackages = packageDocs
+    .map((d: any) => toPackageEntity(d.toJSON()))
+    .sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
 
-  if (activePackage.length === 0) {
+  if (activePackages.length === 0) {
     return 0;
   }
 
-  // Use the most recent active package
-  const pkg = activePackage[activePackage.length - 1];
+  const pkg = activePackages[activePackages.length - 1];
   return pkg.total_price / pkg.sessions_count;
 }
 
 export async function calculateSessionStatus(
   sessionId: string
 ): Promise<PaymentStatus> {
-  const allocations = await db.paymentAllocations
-    .where('session_id')
-    .equals(sessionId)
-    .toArray();
+  const db = await getDb();
+  const allocationDocs = await db.payment_allocations.find({
+    selector: { session_id: sessionId },
+  }).exec();
 
-  const allocated = allocations.reduce((sum, a) => sum + a.allocated_amount, 0);
-  const session = await db.calendarSessions.get(sessionId);
-  
-  if (!session) {
+  const allocated = allocationDocs.reduce((sum, a: any) => sum + a.toJSON().allocated_amount, 0);
+  const sessionDoc = await db.calendar_sessions.findOne(sessionId).exec();
+
+  if (!sessionDoc) {
     return 'unpaid';
   }
+  const session = toCalendarSessionEntity(sessionDoc.toJSON());
 
   const price = await calculateSessionPrice(session.client_id, sessionId);
 
@@ -78,12 +91,12 @@ export async function calculateSessionStatus(
 }
 
 export async function getAllocatedAmount(sessionId: string): Promise<number> {
-  const allocations = await db.paymentAllocations
-    .where('session_id')
-    .equals(sessionId)
-    .toArray();
+  const db = await getDb();
+  const docs = await db.payment_allocations.find({
+    selector: { session_id: sessionId },
+  }).exec();
 
-  return allocations.reduce((sum, a) => sum + a.allocated_amount, 0);
+  return docs.reduce((sum, d: any) => sum + d.toJSON().allocated_amount, 0);
 }
 
 /**
@@ -94,10 +107,12 @@ export async function getEffectiveAllocatedAmount(
   sessionId: string,
   clientId: string
 ): Promise<number> {
-  const session = await db.calendarSessions.get(sessionId);
-  if (!session) {
+  const db = await getDb();
+  const sessionDoc = await db.calendar_sessions.findOne(sessionId).exec();
+  if (!sessionDoc) {
     return 0;
   }
+  const session = toCalendarSessionEntity(sessionDoc.toJSON());
 
   // Get actual allocated amount
   const allocated = await getAllocatedAmount(sessionId);
@@ -109,17 +124,16 @@ export async function getEffectiveAllocatedAmount(
   }
 
   // Calculate client's unallocated balance
-  const payments = await db.payments
-    .where('client_id')
-    .equals(clientId)
-    .toArray();
+  const paymentDocs = await db.payments.find({ selector: { client_id: clientId } }).exec();
+  const payments = paymentDocs.map((d: any) => toPaymentEntity(d.toJSON()));
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
   // Get client to check pause period
-  const client = await db.clients.get(clientId);
-  if (!client) {
+  const clientDoc = await db.clients.findOne(clientId).exec();
+  if (!clientDoc) {
     return allocated;
   }
+  const client = toClientEntity(clientDoc.toJSON());
 
   // Helper function to check if session is in pause period
   const isSessionInPause = (s: CalendarSession): boolean => {
@@ -130,17 +144,18 @@ export async function getEffectiveAllocatedAmount(
     return isDateInRange(sDate, client.pause_from, client.pause_to);
   };
 
-  // Get all sessions for client, then filter and sort in JavaScript
-  // Dexie doesn't support sortBy after and()
-  const allSessions = (await db.calendarSessions
-    .where('client_id')
-    .equals(clientId)
-    .toArray())
+  // Get all sessions for client, sorted by date
+  const allSessionDocs = await db.calendar_sessions.find({
+    selector: { client_id: clientId },
+  }).exec();
+  const allSessions = allSessionDocs
+    .map((d: any) => toCalendarSessionEntity(d.toJSON()))
     .filter((s) => s.status !== 'canceled' && !isSessionInPause(s))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Calculate total allocated across all sessions (excluding pause period sessions)
-  const allAllocations = await db.paymentAllocations.toArray();
+  // Calculate total allocated across all sessions
+  const allAllocationDocs = await db.payment_allocations.find().exec();
+  const allAllocations = allAllocationDocs.map((d: any) => toPaymentAllocationEntity(d.toJSON()));
   const clientSessionIds = allSessions.map((s) => s.id);
   const totalAllocated = allAllocations
     .filter((a) => clientSessionIds.includes(a.session_id))
@@ -148,18 +163,15 @@ export async function getEffectiveAllocatedAmount(
 
   const unallocatedBalance = totalPaid - totalAllocated;
 
-  // If no unallocated balance, return actual allocated
   if (unallocatedBalance <= 0) {
     return allocated;
   }
 
-  // If current session is in pause period, don't apply balance to it
   if (isSessionInPause(session)) {
     return allocated;
   }
 
   // Distribute unallocated balance to unpaid sessions starting from the first unpaid one
-  // First, calculate how much balance would be applied to sessions before this one
   let remainingBalance = unallocatedBalance;
   let balanceAppliedToThisSession = 0;
   const sessionDate = parseISO(session.date);
@@ -170,8 +182,7 @@ export async function getEffectiveAllocatedAmount(
     }
 
     const sDate = parseISO(s.date);
-    
-    // Only consider sessions up to and including the current session
+
     if (sDate > sessionDate) {
       break;
     }
@@ -182,13 +193,11 @@ export async function getEffectiveAllocatedAmount(
 
     if (sNeeded > 0) {
       if (s.id === sessionId) {
-        // This is the current session - apply remaining balance to it
         const toApply = Math.min(remainingBalance, sNeeded);
         balanceAppliedToThisSession = toApply;
         remainingBalance -= toApply;
         break;
       } else {
-        // Apply balance to previous unpaid sessions first
         const toApply = Math.min(remainingBalance, sNeeded);
         remainingBalance -= toApply;
       }
@@ -200,14 +209,14 @@ export async function getEffectiveAllocatedAmount(
 
 /**
  * Calculate session status considering client's unallocated balance
- * This automatically distributes positive balance to unpaid sessions
  */
 export async function calculateSessionStatusWithBalance(
   sessionId: string,
   clientId: string
 ): Promise<PaymentStatus> {
-  const session = await db.calendarSessions.get(sessionId);
-  if (!session) {
+  const db = await getDb();
+  const sessionDoc = await db.calendar_sessions.findOne(sessionId).exec();
+  if (!sessionDoc) {
     return 'unpaid';
   }
 
