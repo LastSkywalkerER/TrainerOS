@@ -7,7 +7,8 @@ import { ClientScheduleForm } from './ClientScheduleForm';
 import { PaymentForm } from './PaymentForm';
 import { PauseDialog } from './PauseDialog';
 import { ArchiveDialog } from './ArchiveDialog';
-import { SessionDetails } from './SessionDetails';
+import { SessionDraftPanel } from './SessionDraftPanel';
+import { SessionCardInlineEditor } from './SessionCardInlineEditor';
 import { paymentService } from '../services/PaymentService';
 import { clientService } from '../services/ClientService';
 import { scheduleService } from '../services/ScheduleService';
@@ -41,8 +42,16 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
   const [currentClient, setCurrentClient] = useState<Client>(client);
   const [showTutorial, setShowTutorial] = useState(false);
   const [sessions, setSessions] = useState<CalendarSession[]>([]);
-  const [selectedSession, setSelectedSession] = useState<CalendarSession | null>(null);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [expandedSessionStatus, setExpandedSessionStatus] = useState<{
+    status: 'paid' | 'partially_paid' | 'unpaid';
+    allocated: number;
+    price: number;
+  } | null>(null);
   const [hideEmptyNotes, setHideEmptyNotes] = useState(true);
+  const [showDraftPanel, setShowDraftPanel] = useState(false);
+  const [draftInitialNotes, setDraftInitialNotes] = useState<string>('');
+  const [selectionHtml, setSelectionHtml] = useState<string | null>(null);
 
   const tutorialSteps: TutorialStep[] = [
     {
@@ -123,6 +132,38 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     setPayments(clientPayments);
   }
 
+  useEffect(() => {
+    if (activeTab !== 'sessions' || showDraftPanel) {
+      setSelectionHtml(null);
+      return;
+    }
+    function handleSelectionChange() {
+      const sel = document.getSelection();
+      if (!sel || sel.isCollapsed) {
+        setSelectionHtml(null);
+        return;
+      }
+      try {
+        const range = sel.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const el = container.nodeType === Node.TEXT_NODE ? container.parentElement : (container as Element);
+        if (!el?.closest('.session-notes-selectable')) {
+          setSelectionHtml(null);
+          return;
+        }
+        const frag = range.cloneContents();
+        const div = document.createElement('div');
+        div.appendChild(frag);
+        const html = div.innerHTML.trim();
+        setSelectionHtml(html || null);
+      } catch {
+        setSelectionHtml(null);
+      }
+    }
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [activeTab, showDraftPanel]);
+
   async function loadSessions() {
     const clientSessions = await calendarSessionService.getByClient(currentClient.id);
     // Sort by date descending and filter out canceled sessions
@@ -139,17 +180,6 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Help Button */}
-      <button
-        onClick={handleHelpClick}
-        className="fixed bottom-24 left-4 w-10 h-10 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors z-40"
-        title="Показать подсказки"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </button>
-
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
         <div className="flex items-center p-4">
@@ -161,6 +191,15 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
           <h1 className="text-xl font-bold flex-1 text-gray-900 dark:text-white">
             {currentClient.full_name}
           </h1>
+          <button
+            onClick={handleHelpClick}
+            className="p-2 mr-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            title="Показать подсказки"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
           <button onClick={onEdit} className="text-blue-600 dark:text-blue-400">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -186,8 +225,8 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
         </div>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
+      {/* Content - extra pb on mobile when draft open (nav hidden); narrow on md when draft open so header stays full width */}
+      <div className={`p-4 ${showDraftPanel ? 'pb-[40vh] md:pb-4 md:mr-[400px]' : ''}`}>
         {activeTab === 'info' && (
           <div className="space-y-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
@@ -331,23 +370,99 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
                   {filteredSessions.map((session) => (
                     <div
                       key={session.id}
-                      onClick={() => setSelectedSession(session)}
-                      className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow cursor-pointer hover:shadow-md transition-shadow"
+                      className="bg-white dark:bg-gray-800 rounded-lg p-3 shadow hover:shadow-md transition-shadow relative w-full"
                     >
-                      <div className="font-medium text-gray-900 dark:text-white mb-2">
-                        {formatDate(session.date)} в {formatTime(session.start_time)}
-                      </div>
-                      {session.notes && session.notes.trim() !== '' && session.notes !== '<p></p>' ? (
-                        <div 
-                          className="tiptap ProseMirror text-sm text-gray-900 dark:text-white max-w-none"
-                          style={{ minHeight: 'auto', padding: 0 }}
-                          dangerouslySetInnerHTML={{ __html: session.notes }}
-                        />
-                      ) : (
-                        <div className="text-sm text-gray-400 dark:text-gray-500 italic">
-                          Нет заметок
+                      <div className="flex flex-col gap-2 w-full">
+                        <div className="flex items-start justify-between gap-2 w-full">
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <div className="font-medium text-gray-900 dark:text-white">
+                                {formatDate(session.date)} в {formatTime(session.start_time)}
+                              </div>
+                              {expandedSessionId === session.id && expandedSessionStatus && (
+                                <span
+                                  className={`shrink-0 px-2 py-0.5 rounded text-xs ${
+                                    expandedSessionStatus.status === 'paid'
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                      : expandedSessionStatus.status === 'partially_paid'
+                                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                      : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                  }`}
+                                >
+                                  {expandedSessionStatus.status === 'paid'
+                                    ? 'Оплачено'
+                                    : expandedSessionStatus.status === 'partially_paid'
+                                    ? 'Частично'
+                                    : 'Не оплачено'}
+                                </span>
+                              )}
+                            </div>
+                            {expandedSessionId !== session.id && (
+                              session.notes &&
+                              session.notes.trim() !== '' &&
+                              session.notes !== '<p></p>' ? (
+                                <div
+                                  className="session-notes-selectable tiptap ProseMirror text-sm text-gray-900 dark:text-white max-w-none select-text"
+                                  style={{ minHeight: 'auto', padding: 0 }}
+                                  dangerouslySetInnerHTML={{ __html: session.notes }}
+                                />
+                              ) : (
+                                <div className="text-sm text-gray-400 dark:text-gray-500 italic">
+                                  Нет заметок
+                                </div>
+                              )
+                            )}
+                          </div>
+                          <button
+                          onClick={() => {
+                            if (expandedSessionId === session.id) {
+                              setExpandedSessionId(null);
+                              setExpandedSessionStatus(null);
+                            } else {
+                              setExpandedSessionId(session.id);
+                              setExpandedSessionStatus(null);
+                            }
+                          }}
+                          className="flex-shrink-0 p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+                          title={expandedSessionId === session.id ? 'Закрыть' : 'Редактировать'}
+                        >
+                          {expandedSessionId === session.id ? (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          )}
+                        </button>
                         </div>
-                      )}
+                        {expandedSessionId === session.id && (
+                          <div className="w-full min-w-0">
+                            <SessionCardInlineEditor
+                              session={session}
+                              onNotesSaved={(updated) => {
+                                setSessions((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+                              }}
+                              onCollapse={() => {
+                                setExpandedSessionId(null);
+                                setExpandedSessionStatus(null);
+                              }}
+                              onCancel={async () => {
+                                await calendarSessionService.cancel(session.id);
+                                setExpandedSessionId(null);
+                                setExpandedSessionStatus(null);
+                                loadSessions();
+                              }}
+                              onStatusLoaded={(data) => {
+                                if (data.sessionId === session.id) {
+                                  setExpandedSessionStatus(data);
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -356,19 +471,57 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
           </div>
         )}
 
-        {selectedSession && (
-          <SessionDetails
-            session={selectedSession}
-            client={currentClient}
-            onClose={() => setSelectedSession(null)}
-            onEdit={() => {}}
-            onCancel={async () => {
-              await calendarSessionService.cancel(selectedSession.id);
-              setSelectedSession(null);
-              loadSessions();
+        {/* Add from selection button */}
+        {activeTab === 'sessions' && !showDraftPanel && selectionHtml && (
+          <button
+            onClick={() => {
+              setDraftInitialNotes(selectionHtml);
+              setShowDraftPanel(true);
+              document.getSelection()?.removeAllRanges();
+              setSelectionHtml(null);
             }}
-            onNotesSaved={(updated) => {
-              setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+            className="fixed bottom-[6.625rem] right-20 px-4 py-2 bg-blue-600 text-white rounded-lg shadow-lg hover:bg-blue-700 transition-colors z-30 text-sm font-medium"
+            title="Добавить из выделенного"
+          >
+            Добавить из выделенного
+          </button>
+        )}
+
+        {/* FAB: add session (sessions tab only) */}
+        {activeTab === 'sessions' && !showDraftPanel && (
+          <button
+            onClick={() => {
+              setDraftInitialNotes('');
+              setShowDraftPanel(true);
+            }}
+            className="fixed bottom-24 right-4 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors z-30"
+            title="Добавить занятие"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        )}
+
+        {showDraftPanel && (
+          <SessionDraftPanel
+            clientId={currentClient.id}
+            sessions={sessions}
+            initialNotes={draftInitialNotes}
+            onSave={(session) => {
+              setShowDraftPanel(false);
+              setDraftInitialNotes('');
+              setSessions((prev) => {
+                const idx = prev.findIndex((s) => s.id === session.id);
+                if (idx >= 0) return prev.map((s) => (s.id === session.id ? session : s));
+                return [session, ...prev].sort(
+                  (a, b) => b.date.localeCompare(a.date) || b.start_time.localeCompare(a.start_time)
+                );
+              });
+            }}
+            onCancel={() => {
+              setShowDraftPanel(false);
+              setDraftInitialNotes('');
             }}
           />
         )}

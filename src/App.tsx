@@ -4,7 +4,7 @@ import { ClientsScreen } from './screens/ClientsScreen';
 import { CalendarScreen } from './screens/CalendarScreen';
 import { PaymentsScreen } from './screens/PaymentsScreen';
 import { SummaryScreen } from './screens/SummaryScreen';
-import { TutorialProvider, useTutorial } from './contexts/TutorialContext';
+import { TutorialProvider } from './contexts/TutorialContext';
 import { ClientProfile } from './components/ClientProfile';
 import { ClientForm } from './components/ClientForm';
 import { UpdateLoader } from './components/UpdateLoader';
@@ -29,7 +29,7 @@ function NavigationBar() {
   const activeTab = location.pathname.split('/')[1] || 'clients';
 
   return (
-    <nav id="tutorial-nav" data-tutorial-id="tutorial-nav" className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+    <nav id="tutorial-nav" data-tutorial-id="tutorial-nav" className="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
       <div className="grid grid-cols-4 h-16">
         <button
           onClick={() => navigate('/clients')}
@@ -167,34 +167,6 @@ function ClientEditRoute() {
   );
 }
 
-function HelpButton() {
-  const location = useLocation();
-  const { triggerTutorial } = useTutorial();
-
-  const handleClick = () => {
-    const pathParts = location.pathname.split('/').filter(Boolean);
-    let page = pathParts[0] || 'clients';
-
-    if (pathParts[0] === 'clients' && pathParts[1] && pathParts[1] !== 'edit') {
-      page = 'client-profile';
-    }
-
-    triggerTutorial(page);
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      className="fixed bottom-24 left-4 w-10 h-10 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 transition-colors z-40"
-      title="Показать подсказки"
-    >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </button>
-  );
-}
-
 function AppContent() {
   const [appReady, setAppReady] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState('Загрузка...');
@@ -283,7 +255,6 @@ function AppContent() {
       </main>
 
       <NavigationBar />
-      <HelpButton />
     </div>
   );
 }

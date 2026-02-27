@@ -59,6 +59,22 @@ body {
   }
 }
 
+/* Session card inline editor - full width, no padding (buttons overlay), stable size on focus */
+.session-card-editor.ProseMirror,
+.session-card-editor.tiptap {
+  padding: 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* EditorContent wrapper in session card - fill parent (format button div excluded) */
+.session-card-editor-wrapper > div:first-child {
+  width: 100% !important;
+  min-width: 0;
+}
+
 /* TipTap Editor Styles */
 .ProseMirror,
 .tiptap {
@@ -123,7 +139,7 @@ html.dark .tiptap[contenteditable] {
 
 .ProseMirror p.is-editor-empty:first-child::before,
 .tiptap p.is-editor-empty:first-child::before {
-  color: rgba(17, 24, 39, 0.5); /* gray-900 with opacity for light mode */
+  color: rgb(107, 114, 128); /* gray-500, good contrast on light background */
   content: attr(data-placeholder);
   float: left;
   height: 0;
@@ -131,8 +147,12 @@ html.dark .tiptap[contenteditable] {
 }
 
 .dark .ProseMirror p.is-editor-empty:first-child::before,
-.dark .tiptap p.is-editor-empty:first-child::before {
-  color: rgba(255, 255, 255, 0.6) !important; /* white with opacity for dark mode */
+.dark .tiptap p.is-editor-empty:first-child::before,
+html.dark .ProseMirror p.is-editor-empty:first-child::before,
+html.dark .tiptap p.is-editor-empty:first-child::before,
+[class*="dark"] .ProseMirror p.is-editor-empty:first-child::before,
+[class*="dark"] .tiptap p.is-editor-empty:first-child::before {
+  color: rgb(156, 163, 175) !important; /* gray-400, good contrast on dark background */
 }
 
 .ProseMirror p,
