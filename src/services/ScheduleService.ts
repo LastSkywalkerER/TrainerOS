@@ -159,7 +159,7 @@ export class ScheduleService {
       effectiveValidTo = newValidTo;
     }
 
-    if (template.valid_to && isAfter(today, startOfDay(template.valid_to))) {
+    if (effectiveValidTo && isAfter(today, startOfDay(effectiveValidTo))) {
       return [];
     }
 

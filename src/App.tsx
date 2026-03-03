@@ -209,6 +209,21 @@ function AppContent() {
       // Step 5: Save current versions
       saveCurrentVersions();
 
+      // Step 6: Refresh schedule generation for all active clients (auto-renewal)
+      try {
+        const { clientService } = await import('./services/ClientService');
+        const { scheduleService } = await import('./services/ScheduleService');
+        const activeClients = await clientService.getAll({ status: 'active' });
+        for (const client of activeClients) {
+          const template = await scheduleService.getTemplateByClient(client.id);
+          if (template) {
+            await scheduleService.generateSessions(template.id);
+          }
+        }
+      } catch (e) {
+        console.error('[App] Failed to refresh schedules on startup:', e);
+      }
+
       // App is ready
       setAppReady(true);
     } catch (error) {
