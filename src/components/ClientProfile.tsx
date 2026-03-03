@@ -413,29 +413,43 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
                               )
                             )}
                           </div>
-                          <button
-                          onClick={() => {
-                            if (expandedSessionId === session.id) {
-                              setExpandedSessionId(null);
-                              setExpandedSessionStatus(null);
-                            } else {
-                              setExpandedSessionId(session.id);
-                              setExpandedSessionStatus(null);
-                            }
-                          }}
-                          className="flex-shrink-0 p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-                          title={expandedSessionId === session.id ? 'Закрыть' : 'Редактировать'}
-                        >
-                          {expandedSessionId === session.id ? (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          )}
-                        </button>
+                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                            <button
+                              onClick={() => {
+                                if (expandedSessionId === session.id) {
+                                  setExpandedSessionId(null);
+                                  setExpandedSessionStatus(null);
+                                } else {
+                                  setExpandedSessionId(session.id);
+                                  setExpandedSessionStatus(null);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+                              title={expandedSessionId === session.id ? 'Закрыть' : 'Редактировать'}
+                            >
+                              {expandedSessionId === session.id ? (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDraftInitialNotes(session.notes || '');
+                                setShowDraftPanel(true);
+                              }}
+                              className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+                              title="Создать черновик из заметок"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                         {expandedSessionId === session.id && (
                           <div className="w-full min-w-0">

@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, useEditorState, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Underline } from '@tiptap/extension-underline';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
 import { CalendarSession, Client } from '../db/types';
 import { formatDate, formatTime } from '../utils/dateUtils';
 import { calculateSessionStatusWithBalance, getEffectiveAllocatedAmount, calculateSessionPrice } from '../utils/calculations';
@@ -46,6 +51,11 @@ export function SessionDetails({
       Placeholder.configure({
         placeholder: 'Добавьте комментарии, план тренировки или другие пометки...',
       }),
+      Underline,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: session.notes || '',
     editorProps: {
@@ -56,6 +66,13 @@ export function SessionDetails({
     onUpdate: () => {
       // Content is updated automatically via editor.getHTML() when saving
     },
+  });
+
+  const editorState = useEditorState({
+    editor,
+    selector: (ctx) => ({
+      isInTable: ctx.editor ? (ctx.editor.isActive('tableCell') || ctx.editor.isActive('tableHeader')) : false,
+    }),
   });
 
   useEffect(() => {
@@ -190,13 +207,12 @@ export function SessionDetails({
               {/* Toolbar */}
               {editor && (
                 <div className="flex flex-wrap gap-1 p-2 bg-gray-100 dark:bg-gray-700 rounded-t-lg border border-gray-200 dark:border-gray-600 border-b-0">
+                  {/* Bold */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleBold().run()}
                     disabled={!editor.can().chain().focus().toggleBold().run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('bold') ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('bold') ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Жирный"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,76 +220,78 @@ export function SessionDetails({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
                     </svg>
                   </button>
+                  {/* Italic */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleItalic().run()}
                     disabled={!editor.can().chain().focus().toggleItalic().run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('italic') ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('italic') ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Курсив"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5h6M7 19h6M8 19l8-14" />
                     </svg>
                   </button>
+                  {/* Underline */}
+                  <button
+                    type="button"
+                    onClick={() => editor.chain().focus().toggleUnderline().run()}
+                    disabled={!editor.can().chain().focus().toggleUnderline().run()}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('underline') ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
+                    title="Подчёркнутый"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4v6a4 4 0 008 0V4M4 20h16" />
+                    </svg>
+                  </button>
+                  {/* Strike */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleStrike().run()}
                     disabled={!editor.can().chain().focus().toggleStrike().run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('strike') ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('strike') ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Зачеркнутый"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.3 8.3C16.8 6.4 15 5 12.7 5c-2.8 0-4.7 1.8-4.7 4 0 1 .4 1.9 1.1 2.5M5 12h14M6.7 15.7C7.2 17.6 9 19 11.3 19c2.8 0 4.7-1.8 4.7-4 0-1-.4-1.9-1.1-2.5" />
                     </svg>
                   </button>
                   <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  {/* H1 */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('heading', { level: 1 }) ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`px-2 py-1 rounded text-xs font-bold hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('heading', { level: 1 }) ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Заголовок 1"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-                    </svg>
+                    H1
                   </button>
+                  {/* H2 */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('heading', { level: 2 }) ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`px-2 py-1 rounded text-xs font-bold hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('heading', { level: 2 }) ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Заголовок 2"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-                    </svg>
+                    H2
                   </button>
                   <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  {/* Bullet List */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleBulletList().run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('bulletList') ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('bulletList') ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Маркированный список"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
                     </svg>
                   </button>
+                  {/* Ordered List */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                      editor.isActive('orderedList') ? 'bg-gray-300 dark:bg-gray-500' : ''
-                    }`}
+                    className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ${editor.isActive('orderedList') ? 'bg-gray-300 dark:bg-gray-500' : ''}`}
                     title="Нумерованный список"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -281,6 +299,54 @@ export function SessionDetails({
                     </svg>
                   </button>
                   <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  {/* Table insert */}
+                  <button
+                    type="button"
+                    onClick={() => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()}
+                    className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    title="Вставить таблицу"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M10 3v18M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6z" />
+                    </svg>
+                  </button>
+                  {/* Table controls — visible only when cursor is inside a table */}
+                  {editorState?.isInTable && (
+                    <>
+                      <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()} className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600" title="Добавить строку ниже">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 17h18M12 3v7" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l3 3 3-3" />
+                        </svg>
+                      </button>
+                      <button type="button" onClick={() => editor.chain().focus().deleteRow().run()} className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-red-500 dark:text-red-400" title="Удалить строку">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 7h18M6 13l-3 7h18l-3-7" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 16l4 4m0-4l-4 4" />
+                        </svg>
+                      </button>
+                      <button type="button" onClick={() => editor.chain().focus().addColumnAfter().run()} className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600" title="Добавить столбец справа">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v18M14 3v18M17 12h4" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9l3 3-3 3" />
+                        </svg>
+                      </button>
+                      <button type="button" onClick={() => editor.chain().focus().deleteColumn().run()} className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-red-500 dark:text-red-400" title="Удалить столбец">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v18M14 3v18" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 9l4 3-4 3" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 9l4 3-4 3" />
+                        </svg>
+                      </button>
+                      <button type="button" onClick={() => editor.chain().focus().deleteTable().run()} className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-red-500 dark:text-red-400" title="Удалить таблицу">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                  <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  {/* Undo */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().undo().run()}
@@ -292,6 +358,7 @@ export function SessionDetails({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                     </svg>
                   </button>
+                  {/* Redo */}
                   <button
                     type="button"
                     onClick={() => editor.chain().focus().redo().run()}
