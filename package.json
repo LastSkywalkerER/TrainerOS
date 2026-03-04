@@ -1,6 +1,6 @@
 {
   "name": "trainer-os",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,7 +26,8 @@
     "react-router-dom": "^7.13.0",
     "rxdb": "^16.21.1",
     "rxjs": "^7.8.2",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

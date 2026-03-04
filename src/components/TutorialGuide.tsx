@@ -40,15 +40,16 @@ export function TutorialGuide({ steps, isActive, onComplete, onSkip }: TutorialG
 
       if (element) {
         const rect = element.getBoundingClientRect();
-        setTargetRect(rect);
+        // Defer setState to avoid stealing focus from inputs when scroll fires (e.g. scrollIntoView on focus)
+        requestAnimationFrame(() => setTargetRect(rect));
       } else {
-        setTargetRect(null);
+        requestAnimationFrame(() => setTargetRect(null));
       }
     };
 
     updateTargetPosition();
 
-    // Update on scroll/resize
+    // Update on scroll/resize - use capture: true to run before potential focus handlers
     window.addEventListener('scroll', updateTargetPosition, true);
     window.addEventListener('resize', updateTargetPosition);
 

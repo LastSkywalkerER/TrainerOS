@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Client } from '../db/types';
 import { clientService } from '../services/ClientService';
@@ -7,10 +7,9 @@ import { MonthlyStats } from '../db/types';
 import { TutorialGuide, TutorialStep } from '../components/TutorialGuide';
 import { tutorialService } from '../services/TutorialService';
 import { useTutorial } from '../contexts/TutorialContext';
-import { backupService } from '../services/BackupService';
 import { Snackbar } from '../components/Snackbar';
+import { SettingsDialog } from '../components/SettingsDialog';
 import { APP_VERSION, DB_SCHEMA_VERSION } from '../db/version';
-import { checkForUpdate, forceRefresh, isSwSupported } from '../pwa/register-sw';
 
 export function SummaryScreen() {
   const navigate = useNavigate();
@@ -19,8 +18,7 @@ export function SummaryScreen() {
   const [clientsWithDebt, setClientsWithDebt] = useState<Array<{ client: Client; debt: number }>>([]);
   const [showTutorial, setShowTutorial] = useState(false);
   const [snackbar, setSnackbar] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const tutorialSteps: TutorialStep[] = [
     {
@@ -47,7 +45,6 @@ export function SummaryScreen() {
     loadStats();
   }, []);
 
-  // Check if tutorial should be shown
   useEffect(() => {
     const triggeredPage = getTriggeredPage();
     if (triggeredPage === 'summary') {
@@ -56,9 +53,7 @@ export function SummaryScreen() {
       return;
     }
 
-    // Check if tutorial was completed
     if (!tutorialService.isCompleted('summary')) {
-      // Small delay to ensure DOM is ready
       const timer = setTimeout(() => {
         setShowTutorial(true);
       }, 500);
@@ -71,7 +66,6 @@ export function SummaryScreen() {
     const stats = await analyticsService.getMonthlyStats(now);
     setMonthStats(stats);
 
-    // Get clients with debt
     const allClients = await clientService.getAll({ status: 'active' });
     const debtClients = await Promise.all(
       allClients.map(async (client) => {
@@ -82,111 +76,33 @@ export function SummaryScreen() {
     setClientsWithDebt(debtClients.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt));
   }
 
-  async function handleExport() {
-    try {
-      const jsonData = await backupService.exportAllData();
-      const blob = new Blob([jsonData], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `trainer-os-backup-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Export failed:', error);
-      setSnackbar({ message: 'Ошибка при экспорте данных', type: 'error' });
-      setTimeout(() => setSnackbar(null), 5000);
-    }
-  }
-
-  async function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      await backupService.importData(text);
-      setSnackbar({ message: 'Данные успешно импортированы', type: 'success' });
-      setTimeout(() => setSnackbar(null), 5000);
-      // Reload stats after import
-      await loadStats();
-    } catch (error) {
-      console.error('Import failed:', error);
-      setSnackbar({ message: 'Ошибка при импорте данных', type: 'error' });
-      setTimeout(() => setSnackbar(null), 5000);
-    } finally {
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  }
-
-  function handleImportClick() {
-    fileInputRef.current?.click();
-  }
-
-  async function handleCheckUpdate() {
-    setCheckingUpdate(true);
-    try {
-      if (isSwSupported()) {
-        const found = await checkForUpdate();
-        if (found) {
-          setSnackbar({ message: 'Найдено обновление! Нажмите "Обновить" в появившемся баннере.', type: 'success' });
-        } else {
-          // No SW update found -- force clear caches and reload
-          setSnackbar({ message: 'Очистка кэша и перезагрузка...', type: 'success' });
-          setTimeout(() => forceRefresh(), 500);
-          return;
-        }
-      } else {
-        // SW not supported -- just clear caches and reload
-        await forceRefresh();
-        return;
-      }
-    } catch (error) {
-      console.error('Update check failed:', error);
-      setSnackbar({ message: 'Ошибка проверки обновлений', type: 'error' });
-    } finally {
-      setCheckingUpdate(false);
-      setTimeout(() => setSnackbar(null), 5000);
-    }
+  function showSnackbar(message: string, type: 'success' | 'error') {
+    setSnackbar({ message, type });
+    setTimeout(() => setSnackbar(null), 5000);
   }
 
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Итоги</h1>
-        <div className="flex gap-2 flex-wrap justify-end">
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-          >
-            Экспорт
-          </button>
-          <button
-            onClick={handleImportClick}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm"
-          >
-            Импорт
-          </button>
-          <button
-            onClick={handleCheckUpdate}
-            disabled={checkingUpdate}
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-sm disabled:opacity-50"
-          >
-            {checkingUpdate ? 'Проверка...' : 'Обновить'}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            onChange={handleImport}
-            className="hidden"
-          />
-        </div>
+        <button
+          onClick={() => {
+            setShowSettings(true);
+            setShowTutorial(false);
+            // Mark ALL tutorials completed — user found Settings, they know the app
+            tutorialService.markCompleted('summary');
+            tutorialService.markCompleted('clients');
+            tutorialService.markCompleted('calendar');
+            tutorialService.markCompleted('payments');
+          }}
+          className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          aria-label="Настройки"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       </div>
 
       {/* Monthly Stats */}
@@ -243,10 +159,10 @@ export function SummaryScreen() {
         )}
       </div>
 
-      {/* Tutorial Guide */}
+      {/* Tutorial Guide - hide when Settings is open so input can receive focus */}
       <TutorialGuide
         steps={tutorialSteps}
-        isActive={showTutorial}
+        isActive={showTutorial && !showSettings}
         onComplete={() => {
           setShowTutorial(false);
           tutorialService.markCompleted('summary');
@@ -262,7 +178,14 @@ export function SummaryScreen() {
         Trainer OS v{APP_VERSION} (DB v{DB_SCHEMA_VERSION})
       </div>
 
-      {/* Snackbar Notification */}
+      {showSettings && (
+        <SettingsDialog
+          onClose={() => setShowSettings(false)}
+          onSnackbar={showSnackbar}
+          onImportSuccess={loadStats}
+        />
+      )}
+
       <Snackbar
         message={snackbar?.message || ''}
         type={snackbar?.type || 'success'}

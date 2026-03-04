@@ -9,6 +9,7 @@ import { ClientProfile } from './components/ClientProfile';
 import { ClientForm } from './components/ClientForm';
 import { UpdateLoader } from './components/UpdateLoader';
 import { UpdatePrompt } from './components/UpdatePrompt';
+import { TutorialHelpButton } from './components/TutorialHelpButton';
 import { clientService } from './services/ClientService';
 import { Client } from './db/types';
 import { tutorialService } from './services/TutorialService';
@@ -16,6 +17,7 @@ import { getDb } from './db/rxdb';
 import { migrateDexieToRxDB } from './db/dexie-migration';
 import { saveAutoBackup } from './db/auto-backup';
 import { backupService } from './services/BackupService';
+import { secureKeyStore } from './services/SecureKeyStore';
 import {
   saveCurrentVersions,
   isAppDowngraded,
@@ -171,9 +173,16 @@ function AppContent() {
   const [appReady, setAppReady] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState('Загрузка...');
   const [updateAvailable, setUpdateAvailable] = useState(false);
-
   const initApp = useCallback(async () => {
     try {
+      // Read API key from URL param ?key=
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlKey = urlParams.get('key');
+      if (urlKey) {
+        await secureKeyStore.saveKey(urlKey);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+
       // Step 1: Initialize RxDB
       setLoaderMessage('Инициализация базы данных...');
       const db = await getDb();
@@ -255,6 +264,9 @@ function AppContent() {
         visible={updateAvailable}
         onDismiss={() => setUpdateAvailable(false)}
       />
+
+      {/* Subtle help button on every page */}
+      <TutorialHelpButton />
 
       {/* Main Content */}
       <main className="pb-20">

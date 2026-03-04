@@ -139,7 +139,10 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     }
     function handleSelectionChange() {
       const sel = document.getSelection();
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isEditing = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
       if (!sel || sel.isCollapsed) {
+        if (isEditing) return; // Skip update when editing to avoid re-render that can steal focus
         setSelectionHtml(null);
         return;
       }
@@ -173,11 +176,6 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
     setSessions(sortedSessions);
   }
 
-  const handleHelpClick = () => {
-    setShowTutorial(true);
-    // Don't mark as completed when triggered manually
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -191,15 +189,6 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
           <h1 className="text-xl font-bold flex-1 text-gray-900 dark:text-white">
             {currentClient.full_name}
           </h1>
-          <button
-            onClick={handleHelpClick}
-            className="p-2 mr-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-            title="Показать подсказки"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
           <button onClick={onEdit} className="text-blue-600 dark:text-blue-400">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -758,10 +747,10 @@ export function ClientProfile({ client, onBack, onEdit, onStatusChange, initialT
         />
       )}
 
-      {/* Tutorial Guide */}
+      {/* Tutorial Guide - hide when panels/dialogs are open so inputs can receive focus */}
       <TutorialGuide
         steps={tutorialSteps}
-        isActive={showTutorial && !showPaymentForm && !showPauseDialog && !showArchiveDialog}
+        isActive={showTutorial && !showPaymentForm && !showPauseDialog && !showArchiveDialog && !showDraftPanel && !expandedSessionId}
         onComplete={() => {
           setShowTutorial(false);
           tutorialService.markCompleted('client-profile' as any);
