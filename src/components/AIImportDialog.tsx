@@ -4,6 +4,8 @@ import {
   ParsedImportData,
   ImportResult,
 } from '../services/AIImportService';
+import { clientService } from '../services/ClientService';
+import { Client } from '../db/types';
 
 interface AIImportDialogProps {
   onClose: () => void;
@@ -11,7 +13,7 @@ interface AIImportDialogProps {
   onOpenSettings: () => void;
 }
 
-type Step = 'upload' | 'parsing' | 'preview' | 'importing' | 'done';
+type Step = 'upload' | 'parsing' | 'preview' | 'defaults' | 'matching' | 'importing' | 'done';
 
 export function AIImportDialog({ onClose, onSuccess, onOpenSettings }: AIImportDialogProps) {
   const [step, setStep] = useState<Step>('upload');
@@ -27,6 +29,18 @@ export function AIImportDialog({ onClose, onSuccess, onOpenSettings }: AIImportD
   const [selectedClients, setSelectedClients] = useState<Set<number>>(new Set());
   const [selectedSessions, setSelectedSessions] = useState<Set<number>>(new Set());
   const [selectedPayments, setSelectedPayments] = useState<Set<number>>(new Set());
+
+  // Session defaults applied to all selected sessions missing year/time
+  const currentYear = new Date().getFullYear();
+  const [defaultYear, setDefaultYear] = useState<string>(String(currentYear));
+  const [defaultTime, setDefaultTime] = useState<string>('');
+
+  // Client matching: parsed name → existing client id | null (create new) | undefined (not yet set)
+  const [existingClients, setExistingClients] = useState<Client[]>([]);
+  // Map: parsed client name → existing client id or '' (create new with edited name)
+  const [clientMapping, setClientMapping] = useState<Map<string, string>>(new Map());
+  // Map: parsed client name → display name to use when creating new
+  const [clientNewNames, setClientNewNames] = useState<Map<string, string>>(new Map());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,10 +78,47 @@ export function AIImportDialog({ onClose, onSuccess, onOpenSettings }: AIImportD
     setStep('parsing');
     setParseError('');
     try {
-      const text = await aiImportService.readFile(file);
+      const [text, allClients] = await Promise.all([
+        aiImportService.readFile(file),
+        clientService.getAll(),
+      ]);
       const data = await aiImportService.parseText(text);
       setParsed(data);
-      // Выбираем всё по умолчанию
+      setExistingClients(allClients);
+
+      // Build initial mapping: try to auto-match each parsed client name
+      const mapping = new Map<string, string>();
+      const newNames = new Map<string, string>();
+      for (const c of data.clients) {
+        const nameLower = c.name.toLowerCase().trim();
+        const match = allClients.find((ec) => {
+          const ecLower = ec.full_name.toLowerCase();
+          return ecLower.includes(nameLower) || nameLower.includes(ecLower);
+        });
+        mapping.set(c.name, match ? match.id : '');
+        newNames.set(c.name, c.name);
+      }
+      // Also auto-map client names from sessions/payments that aren't in clients list
+      const allParsedNames = new Set([
+        ...data.clients.map((c) => c.name),
+        ...data.sessions.map((s) => s.client_name),
+        ...data.payments.map((p) => p.client_name),
+      ]);
+      for (const name of allParsedNames) {
+        if (!mapping.has(name)) {
+          const nameLower = name.toLowerCase().trim();
+          const match = allClients.find((ec) => {
+            const ecLower = ec.full_name.toLowerCase();
+            return ecLower.includes(nameLower) || nameLower.includes(ecLower);
+          });
+          mapping.set(name, match ? match.id : '');
+          newNames.set(name, name);
+        }
+      }
+      setClientMapping(mapping);
+      setClientNewNames(newNames);
+
+      // Select all by default
       setSelectedClients(new Set(data.clients.map((_, i) => i)));
       setSelectedSessions(new Set(data.sessions.map((_, i) => i)));
       setSelectedPayments(new Set(data.payments.map((_, i) => i)));
@@ -82,18 +133,59 @@ export function AIImportDialog({ onClose, onSuccess, onOpenSettings }: AIImportD
     if (!parsed) return;
     setStep('importing');
     try {
+      // Build final mapping for applyImport:
+      // existing client id → pass as-is; '' → create new (using clientNewNames for the name)
+      const finalMapping = new Map<string, string | null>();
+      for (const [parsedName, clientId] of clientMapping) {
+        if (clientId) {
+          finalMapping.set(parsedName, clientId);
+        } else {
+          // Will create new — rename if user edited the name
+          finalMapping.set(parsedName, null);
+        }
+      }
+
+      // Patch parsed data: apply defaults + rename "create new" clients
+      const patchedData = {
+        ...parsed,
+        clients: parsed.clients.map((c) => ({
+          ...c,
+          name: clientMapping.get(c.name) ? c.name : (clientNewNames.get(c.name) ?? c.name),
+        })),
+        sessions: parsed.sessions.map((s) => {
+          const mappedId = clientMapping.get(s.client_name);
+          const clientName = mappedId ? s.client_name : (clientNewNames.get(s.client_name) ?? s.client_name);
+          // Apply default year if date is missing year (format MM-DD or similar short form)
+          let date = s.date;
+          if (date && !/^\d{4}-/.test(date)) {
+            date = `${defaultYear}-${date}`;
+          } else if (date && defaultYear && date.startsWith('0000-')) {
+            date = `${defaultYear}-${date.slice(5)}`;
+          }
+          // Apply default time if missing
+          const time = s.time ?? (defaultTime || null);
+          return { ...s, client_name: clientName, date: date ?? s.date, time: time ?? undefined };
+        }),
+        payments: parsed.payments.map((p) => {
+          const mappedId = clientMapping.get(p.client_name);
+          if (mappedId) return p;
+          return { ...p, client_name: clientNewNames.get(p.client_name) ?? p.client_name };
+        }),
+      };
+
       const importResult = await aiImportService.applyImport(
-        parsed,
+        patchedData,
         selectedClients,
         selectedSessions,
-        selectedPayments
+        selectedPayments,
+        finalMapping
       );
       setResult(importResult);
       setStep('done');
       onSuccess(importResult);
     } catch (e: any) {
       setParseError(e?.message ?? 'Ошибка импорта');
-      setStep('preview');
+      setStep('matching');
     }
   }
 
@@ -342,9 +434,146 @@ export function AIImportDialog({ onClose, onSuccess, onOpenSettings }: AIImportD
                   Назад
                 </button>
                 <button
-                  onClick={handleImport}
+                  onClick={() => setStep('defaults')}
                   disabled={totalSelected === 0}
                   className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  Далее
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Session defaults */}
+          {step === 'defaults' && parsed && (() => {
+            const missingSomeYear = parsed.sessions.some((s, i) => selectedSessions.has(i) && s.date && !/^\d{4}-/.test(s.date));
+            const missingSomeTime = parsed.sessions.some((s, i) => selectedSessions.has(i) && !s.time);
+            const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
+            const timeOptions = ['06:00','07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
+            return (
+              <div className="space-y-5">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Значения по умолчанию применяются ко всем выбранным занятиям, у которых не указан год или время.
+                </p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Год по умолчанию
+                    </label>
+                    <select
+                      value={defaultYear}
+                      onChange={(e) => setDefaultYear(e.target.value)}
+                      className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                      {yearOptions.map((y) => (
+                        <option key={y} value={String(y)}>{y}</option>
+                      ))}
+                    </select>
+                    {!missingSomeYear && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Все занятия уже содержат год</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Время по умолчанию
+                    </label>
+                    <select
+                      value={defaultTime}
+                      onChange={(e) => setDefaultTime(e.target.value)}
+                      className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                      <option value="">Не указывать</option>
+                      {timeOptions.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    {!missingSomeTime && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Все занятия уже содержат время</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setStep('preview')}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Назад
+                  </button>
+                  <button
+                    onClick={() => setStep('matching')}
+                    className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Далее
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Step: Client matching */}
+          {step === 'matching' && parsed && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Сопоставьте клиентов из файла с существующими или создайте новых.
+              </p>
+              <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                {Array.from(clientMapping.keys()).map((parsedName) => {
+                  const selectedId = clientMapping.get(parsedName) ?? '';
+                  const isNew = selectedId === '';
+                  return (
+                    <div key={parsedName} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400 shrink-0">Из файла:</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{parsedName}</span>
+                      </div>
+                      <select
+                        value={selectedId}
+                        onChange={(e) => {
+                          const next = new Map(clientMapping);
+                          next.set(parsedName, e.target.value);
+                          setClientMapping(next);
+                        }}
+                        className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      >
+                        <option value="">+ Создать нового</option>
+                        {existingClients.map((ec) => (
+                          <option key={ec.id} value={ec.id}>{ec.full_name}</option>
+                        ))}
+                      </select>
+                      {isNew && (
+                        <input
+                          type="text"
+                          value={clientNewNames.get(parsedName) ?? parsedName}
+                          onChange={(e) => {
+                            const next = new Map(clientNewNames);
+                            next.set(parsedName, e.target.value);
+                            setClientNewNames(next);
+                          }}
+                          placeholder="Имя нового клиента"
+                          className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {parseError && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-800 dark:text-red-200">
+                  {parseError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setStep('preview')}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Назад
+                </button>
+                <button
+                  onClick={handleImport}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                 >
                   Импортировать ({totalSelected})
                 </button>

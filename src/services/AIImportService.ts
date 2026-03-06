@@ -44,24 +44,43 @@ export interface ImportResult {
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'google/gemini-2.0-flash-001';
-const MAX_TEXT_LENGTH = 8000;
+const MAX_TEXT_LENGTH = 16000;
 const ENV_API_KEY = (import.meta as any).env?.VITE_OPENROUTER_API_KEY as string | undefined;
 
-const PARSE_PROMPT = `Ты помогаешь тренеру по фитнесу импортировать данные из файла в приложение.
-Проанализируй данные ниже и извлеки клиентов, занятия и платежи.
+const PARSE_PROMPT = `You are helping a fitness trainer import data from a file into a training management app.
 
-Правила:
-- date: формат YYYY-MM-DD. Преобразуй любые форматы дат (3 марта, 03.03, March 3, 03/03/2025 и т.д.)
-- Если год не указан, используй текущий год
-- time: формат HH:mm (24-часовой). "9 утра" → "09:00", "half past 3" → "15:30"
-- status: только "planned", "completed" или "canceled". По умолчанию "planned"
-- method: только "cash", "card", "transfer" или "other"
-- Если поле неизвестно или не указано — используй null (не пустую строку)
-- Один клиент может фигурировать в нескольких занятиях — это нормально
-- Если видишь только имя клиента без занятия — добавь в clients
-- Верни ТОЛЬКО валидный JSON без markdown-блоков, без комментариев
+STEP 1 — STRUCTURE ANALYSIS:
+Before extracting data, identify the file's pattern:
+- What do sheet/tab names represent? (client names, trainer names, weekdays, activity types — or something else? Do not assume.)
+- What serves as section headers within a sheet? (workout dates, client names, activity types — or something else?)
+- How is data formatted under the headers? (exercises as NxM sets/reps, body measurements, payment records, schedule — or something else?)
+Write a brief 1-2 sentence description of the pattern before the JSON.
 
-Целевая схема:
+STEP 2 — EXTRACTION:
+Based on the identified pattern, extract clients, sessions, and payments.
+
+Rules:
+- If a section header is a date: all content in that section (until the next date) = one session. Store ALL content (exercises, measurements, any other data) in the session's notes field — regardless of what type of data it is.
+- If a section header is a client name: the content = that client's sessions or data.
+- If a sheet = a client: all sessions on that sheet belong to that client.
+- If a sheet = a trainer or a day: look for client names inside the sheet as sub-headers.
+- Adapt to the actual file structure — do not force a template.
+- date: YYYY-MM-DD format. Convert any format (3 марта, 03.03, 2025-01-09, Mar 3, etc.). If the year is missing, infer it from neighboring dates or use the current year.
+- time: HH:mm format (24-hour). "9 утра" → "09:00"
+- status: only "planned", "completed", or "canceled". Default: "planned"
+- method: only "cash", "card", "transfer", or "other"
+- If a field is unknown — use null
+- session notes: convert ALL content under a session header into clean, human-readable multi-line text. Use this universal approach: identify what each row/column represents by its label or position, then write each logical item on its own line as "Label: value1, value2, ...". Examples by content type:
+  * Workout table (col headers = exercises, rows = sets): "Жим ногами: 10x15, 20x15, 39x15\nРазведение ног: 30x12, 40x13"
+  * Transposed workout (row headers = exercises, cols = sets): same result — transpose mentally and write exercise per line
+  * Body measurements (row headers = body part, cols = dates or attempts): "Плечи: 127, 127.6, 122\nГрудь: 104.3, 105.5, 102\nТалия: 102, 98.1"
+  * Free text or mixed: preserve as-is, one logical item per line
+  * Preserve inline comments ("отказ", "около отказ", "чуть криво") next to their value
+  * Ignore empty cells — do not write "null" or blank entries
+- One client can appear in multiple sessions — that is normal
+- Return ONLY valid JSON with no markdown blocks and no comments
+
+Target schema:
 {
   "clients": [
     { "name": "string", "phone": "string|null", "telegram": "string|null", "notes": "string|null" }
@@ -74,7 +93,7 @@ const PARSE_PROMPT = `Ты помогаешь тренеру по фитнесу
   ]
 }
 
-Данные из файла:
+File data:
 `;
 
 class AIImportService {
@@ -110,7 +129,7 @@ class AIImportService {
 
   private async _readExcel(file: File): Promise<string> {
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
     const lines: string[] = [];
     for (const sheetName of workbook.SheetNames) {
@@ -171,11 +190,17 @@ class AIImportService {
   }
 
   private _parseResponse(content: string): ParsedImportData {
-    // Удаляем возможные markdown-блоки
-    const cleaned = content
+    // Strip markdown code blocks, then extract the JSON object/array
+    const withoutFences = content
       .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g, '')
-      .trim();
+      .replace(/```\s*/g, '');
+
+    // Find the first { or [ to skip any preamble text (e.g. structure analysis)
+    const jsonStart = Math.min(
+      withoutFences.indexOf('{') === -1 ? Infinity : withoutFences.indexOf('{'),
+      withoutFences.indexOf('[') === -1 ? Infinity : withoutFences.indexOf('['),
+    );
+    const cleaned = jsonStart === Infinity ? withoutFences.trim() : withoutFences.slice(jsonStart).trim();
 
     let parsed: any;
     try {
@@ -218,11 +243,13 @@ class AIImportService {
   }
 
   // Применяет распознанные данные к БД
+  // clientMapping: имя из файла → существующий client_id (или null = создать нового)
   async applyImport(
     data: ParsedImportData,
     selectedClients: Set<number>,
     selectedSessions: Set<number>,
-    selectedPayments: Set<number>
+    selectedPayments: Set<number>,
+    clientMapping: Map<string, string | null> = new Map()
   ): Promise<ImportResult> {
     const result: ImportResult = {
       clientsCreated: 0,
@@ -231,10 +258,10 @@ class AIImportService {
       errors: [],
     };
 
-    // Кэш: имя → client_id (для этой сессии импорта)
+    // Кэш: имя (lowercase) → client_id
     const clientCache = new Map<string, string>();
 
-    // Загружаем существующих клиентов для матчинга
+    // Загружаем существующих клиентов (нужны для создания новых)
     const existingClients = await clientService.getAll();
 
     const findOrCreateClient = async (name: string): Promise<string | null> => {
@@ -244,15 +271,14 @@ class AIImportService {
         return clientCache.get(nameLower)!;
       }
 
-      // Ищем по имени (substring match в обе стороны)
-      const match = existingClients.find((c) => {
-        const cLower = c.full_name.toLowerCase();
-        return cLower.includes(nameLower) || nameLower.includes(cLower);
-      });
-
-      if (match) {
-        clientCache.set(nameLower, match.id);
-        return match.id;
+      // Если есть явный маппинг от пользователя
+      if (clientMapping.has(name)) {
+        const mappedId = clientMapping.get(name)!;
+        if (mappedId) {
+          clientCache.set(nameLower, mappedId);
+          return mappedId;
+        }
+        // null = создать нового (не искать автоматически)
       }
 
       // Создаём нового
