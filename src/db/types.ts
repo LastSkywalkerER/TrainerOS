@@ -2,6 +2,9 @@
 
 export type ClientStatus = 'active' | 'paused' | 'archived';
 
+/** Fixed ID for the personal notes system client (singleton, created at app init) */
+export const PERSONAL_NOTES_CLIENT_ID = '__personal_notes__';
+
 export interface Client {
   id: string;
   full_name: string;
@@ -15,6 +18,8 @@ export interface Client {
   archive_date?: Date;
   created_at: Date;
   updated_at: Date;
+  /** True for system clients like "Мои заметки" - excluded from clients list */
+  is_system?: boolean;
 }
 
 export interface ScheduleRule {

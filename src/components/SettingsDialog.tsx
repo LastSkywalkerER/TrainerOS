@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { aiImportService, ImportResult } from '../services/AIImportService';
 import { backupService } from '../services/BackupService';
+import { listBackups, type StoredBackup } from '../db/auto-backup';
 import { checkForUpdate, forceRefresh, isSwSupported } from '../pwa/register-sw';
 import { AIImportDialog } from './AIImportDialog';
 
@@ -16,7 +17,13 @@ export function SettingsDialog({ onClose, onSnackbar, onImportSuccess }: Setting
   const [saving, setSaving] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [showAIImport, setShowAIImport] = useState(false);
+  const [storedBackups, setStoredBackups] = useState<StoredBackup[]>([]);
+  const [restoring, setRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    listBackups().then(setStoredBackups);
+  }, []);
 
   useEffect(() => {
     aiImportService.getApiKey().then((key) => {
@@ -55,6 +62,24 @@ export function SettingsDialog({ onClose, onSnackbar, onImportSuccess }: Setting
       URL.revokeObjectURL(url);
     } catch {
       onSnackbar('Ошибка при экспорте данных', 'error');
+    }
+  }
+
+  async function handleRestoreFromBackup(backup: StoredBackup) {
+    if (!confirm(`Восстановить данные из резервной копии от ${new Date(backup.timestamp).toLocaleString('ru')}? Текущие данные будут заменены.`)) {
+      return;
+    }
+    setRestoring(true);
+    try {
+      await backupService.restoreFromStoredBackup(backup.data);
+      onSnackbar('Данные восстановлены. Перезагрузка...', 'success');
+      onImportSuccess?.();
+      setTimeout(() => window.location.reload(), 500);
+    } catch (error) {
+      console.error('Restore failed:', error);
+      onSnackbar('Ошибка при восстановлении', 'error');
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -244,6 +269,26 @@ export function SettingsDialog({ onClose, onSnackbar, onImportSuccess }: Setting
               onChange={handleImport}
               className="hidden"
             />
+            {storedBackups.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  Восстановить из авто-резервной копии
+                </div>
+                {storedBackups.slice(0, 3).map((b) => (
+                  <button
+                    key={b.key}
+                    onClick={() => handleRestoreFromBackup(b)}
+                    disabled={restoring}
+                    className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50"
+                  >
+                    <span className="truncate">
+                      {new Date(b.timestamp).toLocaleString('ru')}
+                    </span>
+                    <span className="text-xs shrink-0">v{b.dbVersion}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               onClick={handleCheckUpdate}
               disabled={checkingUpdate}

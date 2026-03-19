@@ -153,7 +153,6 @@ export function SessionDraftPanel({
       setTimeout(() => onSave(session), 500);
     } catch (e) {
       setSnackbar({ message: 'Ошибка при создании', type: 'error' });
-      setTimeout(() => setSnackbar(null), 4000);
     } finally {
       setIsSaving(false);
     }
@@ -171,7 +170,6 @@ export function SessionDraftPanel({
         setTimeout(() => onSave(updated), 500);
       } catch (e) {
         setSnackbar({ message: 'Ошибка при сохранении', type: 'error' });
-        setTimeout(() => setSnackbar(null), 4000);
       } finally {
         setIsSaving(false);
       }
@@ -398,6 +396,7 @@ export function SessionDraftPanel({
         type={snackbar?.type ?? 'success'}
         visible={snackbar !== null}
         onClose={() => setSnackbar(null)}
+        autoHideDuration={snackbar?.type === 'error' ? 4000 : 3000}
       />
     </>
   );

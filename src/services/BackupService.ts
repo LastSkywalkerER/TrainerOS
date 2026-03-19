@@ -1,4 +1,4 @@
-import { getDb } from '../db/rxdb';
+import { getDb, resetDatabase } from '../db/rxdb';
 import {
   Client,
   ScheduleTemplate,
@@ -215,6 +215,16 @@ export class BackupService {
         await db.payment_allocations.insert(stripUndefined(paymentAllocationToDb(allocation)));
       }
     }
+  }
+
+  /**
+   * Restore from an auto-backup (clears current DB and imports backup data).
+   * Call this after resetDatabase() when recovering from migration failure.
+   */
+  async restoreFromStoredBackup(backupData: string): Promise<void> {
+    await resetDatabase();
+    await getDb(); // Creates fresh DB
+    await this.importData(backupData);
   }
 }
 

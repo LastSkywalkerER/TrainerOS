@@ -7,6 +7,27 @@ export default defineConfig({
   define: {
     '__APP_VERSION__': JSON.stringify(pkg.version),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-rxdb': ['rxdb', 'dexie'],
+          'vendor-tiptap': [
+            '@tiptap/react',
+            '@tiptap/starter-kit',
+            '@tiptap/extension-placeholder',
+            '@tiptap/extension-underline',
+            '@tiptap/extension-table',
+            '@tiptap/extension-table-cell',
+            '@tiptap/extension-table-header',
+            '@tiptap/extension-table-row',
+          ],
+          'vendor-date': ['date-fns'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
+  },
   plugins: [
     react(),
     VitePWA({

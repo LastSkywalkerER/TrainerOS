@@ -3,6 +3,7 @@
 import { createRxDatabase, removeRxDatabase, addRxPlugin } from 'rxdb';
 import type { RxDatabase, RxCollection, RxStorage } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 import {
   clientSchema,
   scheduleTemplateSchema,
@@ -14,7 +15,7 @@ import {
 
 const DB_NAME = 'trainer_os';
 
-let devModeInitialized = false;
+let pluginsInitialized = false;
 
 // RxDB collection types
 export type TrainerOSCollections = {
@@ -38,12 +39,15 @@ export function getDb(): Promise<TrainerOSDatabase> {
   return dbPromise;
 }
 
-/** Initialize dev-mode plugins (once) */
-async function ensureDevMode(): Promise<void> {
-  if (devModeInitialized || !import.meta.env.DEV) return;
-  devModeInitialized = true;
-  const { RxDBDevModePlugin } = await import('rxdb/plugins/dev-mode');
-  addRxPlugin(RxDBDevModePlugin);
+/** Initialize plugins (once) */
+async function ensurePlugins(): Promise<void> {
+  if (pluginsInitialized) return;
+  pluginsInitialized = true;
+  addRxPlugin(RxDBMigrationSchemaPlugin);
+  if (import.meta.env.DEV) {
+    const { RxDBDevModePlugin } = await import('rxdb/plugins/dev-mode');
+    addRxPlugin(RxDBDevModePlugin);
+  }
 }
 
 /** Build the storage, wrapping with schema validator in dev mode */
@@ -58,7 +62,7 @@ async function getStorage(): Promise<RxStorage<any, any>> {
 
 /** Initialize the RxDB database */
 async function initDatabase(): Promise<TrainerOSDatabase> {
-  await ensureDevMode();
+  await ensurePlugins();
 
   const storage = await getStorage();
   const db = await createRxDatabase<TrainerOSCollections>({
@@ -69,7 +73,18 @@ async function initDatabase(): Promise<TrainerOSDatabase> {
   });
 
   await db.addCollections({
-    clients: { schema: clientSchema },
+    clients: {
+      schema: clientSchema,
+      migrationStrategies: {
+        // Migrate from version 0 to 1: add is_system field (false for existing clients)
+        1: (oldDoc: any) => {
+          if (oldDoc.is_system === undefined) {
+            oldDoc.is_system = false;
+          }
+          return oldDoc;
+        },
+      },
+    },
     schedule_templates: { schema: scheduleTemplateSchema },
     calendar_sessions: { schema: calendarSessionSchema },
     packages: { schema: packageSchema },
@@ -83,10 +98,13 @@ async function initDatabase(): Promise<TrainerOSDatabase> {
 /** Destroy and recreate the database (for testing / recovery) */
 export async function resetDatabase(): Promise<void> {
   if (dbPromise) {
-    const db = await dbPromise;
-    await db.remove();
+    try {
+      const db = await dbPromise;
+      await db.remove();
+    } catch {
+      // DB may have failed to open (e.g. schema mismatch) - clear anyway
+    }
     dbPromise = null;
-    return;
   }
   await removeRxDatabase(DB_NAME, getRxStorageDexie());
 }

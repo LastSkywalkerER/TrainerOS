@@ -126,9 +126,6 @@ export function SessionDetails({
       
       // Show success snackbar
       setSnackbar({ message: 'Пометки успешно сохранены', type: 'success' });
-      setTimeout(() => {
-        setSnackbar(null);
-      }, 3000);
       
       // Notify parent component to update session data
       if (onNotesSaved) {
@@ -137,9 +134,6 @@ export function SessionDetails({
     } catch (error) {
       console.error('Failed to save notes:', error);
       setSnackbar({ message: 'Ошибка при сохранении пометок. Попробуйте еще раз.', type: 'error' });
-      setTimeout(() => {
-        setSnackbar(null);
-      }, 4000);
     } finally {
       setIsSavingNotes(false);
     }
@@ -487,6 +481,7 @@ export function SessionDetails({
         type={snackbar?.type || 'success'}
         visible={snackbar !== null}
         onClose={() => setSnackbar(null)}
+        autoHideDuration={snackbar?.type === 'error' ? 4000 : 3000}
       />
     </div>
   );

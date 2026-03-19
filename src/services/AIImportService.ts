@@ -3,6 +3,7 @@ import { secureKeyStore } from './SecureKeyStore';
 import { clientService } from './ClientService';
 import { calendarSessionService } from './CalendarSessionService';
 import { paymentService } from './PaymentService';
+import { getDb } from '../db/rxdb';
 import { SessionStatus, PaymentMethod } from '../db/types';
 
 export interface ParsedClient {
@@ -336,7 +337,7 @@ class AIImportService {
 
         // Если занятие завершено — меняем статус
         if (s.status === 'completed' || s.status === 'canceled') {
-          const db = await import('../db/rxdb').then((m) => m.getDb());
+          const db = await getDb();
           const sessions = await db.calendar_sessions
             .find({ selector: { client_id: clientId, date: s.date, start_time: s.time ?? '09:00' } })
             .exec();

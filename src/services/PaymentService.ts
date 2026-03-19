@@ -2,6 +2,7 @@ import { getDb } from '../db/rxdb';
 import { Payment, CreatePaymentDto } from '../db/types';
 import { generateId } from '../utils/uuid';
 import { allocationService } from './AllocationService';
+import { recalculateService } from './RecalculationService';
 import { isDateInRange } from '../utils/dateUtils';
 import {
   toPaymentEntity,
@@ -73,7 +74,6 @@ export class PaymentService {
     }
 
     // Recalculate affected sessions
-    const { recalculateService } = await import('./RecalculationService');
     for (const sessionId of sessionIds) {
       await recalculateService.recalculateSession(sessionId);
     }
@@ -150,7 +150,6 @@ export class PaymentService {
     }
 
     // Recalculate client to update balance and debt
-    const { recalculateService } = await import('./RecalculationService');
     await recalculateService.recalculateClient(payment.client_id);
   }
 }

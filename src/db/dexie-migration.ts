@@ -4,8 +4,103 @@
 import Dexie from 'dexie';
 import type { TrainerOSDatabase } from './rxdb';
 import { toDbDate, stripUndefined } from './dateHelpers';
+import { saveAutoBackup } from './auto-backup';
+import { APP_VERSION } from './version';
+import type { BackupData } from '../services/BackupService';
 
 const MIGRATION_FLAG = 'trainer-os-dexie-migrated';
+
+function toDate(v: any): Date {
+  return v instanceof Date ? v : new Date(v || Date.now());
+}
+
+/** Export legacy Dexie data to BackupData format (dbVersion 0) */
+async function exportDexieToBackupData(legacyDb: Dexie): Promise<BackupData> {
+  const [clients, templates, sessions, packages, payments, allocations] = await Promise.all([
+    legacyDb.table('clients').toArray(),
+    legacyDb.table('scheduleTemplates').toArray(),
+    legacyDb.table('calendarSessions').toArray(),
+    legacyDb.table('packages').toArray(),
+    legacyDb.table('payments').toArray(),
+    legacyDb.table('paymentAllocations').toArray(),
+  ]);
+
+  return {
+    version: '2.0',
+    appVersion: APP_VERSION,
+    dbVersion: 0,
+    exportDate: new Date().toISOString(),
+    clients: clients.map((c: any) => ({
+      id: c.id,
+      full_name: c.full_name,
+      phone: c.phone,
+      telegram: c.telegram,
+      notes: c.notes,
+      status: c.status,
+      start_date: toDate(c.start_date || c.created_at),
+      pause_from: c.pause_from ? toDate(c.pause_from) : undefined,
+      pause_to: c.pause_to ? toDate(c.pause_to) : undefined,
+      archive_date: c.archive_date ? toDate(c.archive_date) : undefined,
+      created_at: toDate(c.created_at),
+      updated_at: toDate(c.updated_at),
+    })),
+    scheduleTemplates: templates.map((t: any) => ({
+      id: t.id,
+      client_id: t.client_id,
+      timezone: t.timezone,
+      rules: t.rules,
+      generation_horizon_days: t.generation_horizon_days,
+      valid_from: t.valid_from ? toDate(t.valid_from) : undefined,
+      valid_to: t.valid_to ? toDate(t.valid_to) : undefined,
+      created_at: toDate(t.created_at),
+      updated_at: toDate(t.updated_at),
+    })),
+    calendarSessions: sessions.map((s: any) => ({
+      id: s.id,
+      client_id: s.client_id,
+      date: s.date,
+      start_time: s.start_time,
+      status: s.status,
+      template_rule_id: s.template_rule_id,
+      is_custom: s.is_custom,
+      is_edited: s.is_edited,
+      price_override: s.price_override,
+      notes: s.notes,
+      created_at: toDate(s.created_at),
+      updated_at: toDate(s.updated_at),
+    })),
+    packages: packages.map((p: any) => ({
+      id: p.id,
+      client_id: p.client_id,
+      title: p.title,
+      total_price: p.total_price,
+      sessions_count: p.sessions_count,
+      allocation_mode: p.allocation_mode,
+      status: p.status,
+      valid_from: p.valid_from ? toDate(p.valid_from) : undefined,
+      valid_until: p.valid_until ? toDate(p.valid_until) : undefined,
+      created_at: toDate(p.created_at),
+      updated_at: toDate(p.updated_at),
+    })),
+    payments: payments.map((p: any) => ({
+      id: p.id,
+      client_id: p.client_id,
+      paid_at: toDate(p.paid_at),
+      amount: p.amount,
+      method: p.method,
+      comment: p.comment,
+      created_at: toDate(p.created_at),
+      updated_at: toDate(p.updated_at),
+    })),
+    paymentAllocations: allocations.map((a: any) => ({
+      id: a.id,
+      payment_id: a.payment_id,
+      session_id: a.session_id,
+      allocated_amount: a.allocated_amount,
+      created_at: toDate(a.created_at),
+    })),
+  };
+}
 
 /** Check if migration from Dexie has already been completed */
 export function isDexieMigrated(): boolean {
@@ -42,6 +137,15 @@ export async function migrateDexieToRxDB(rxdb: TrainerOSDatabase): Promise<void>
   try {
     await legacyDb.open();
 
+    // Create pre-migration backup so user can restore/rollback via Settings
+    try {
+      const backupData = await exportDexieToBackupData(legacyDb);
+      await saveAutoBackup(JSON.stringify(backupData, null, 2));
+      console.log('[Migration] Pre-migration backup saved (legacy Dexie data)');
+    } catch (e) {
+      console.error('[Migration] Failed to save pre-migration backup:', e);
+    }
+
     // Migrate clients
     const clients = await legacyDb.table('clients').toArray();
     if (clients.length > 0) {
@@ -52,6 +156,7 @@ export async function migrateDexieToRxDB(rxdb: TrainerOSDatabase): Promise<void>
         telegram: c.telegram || undefined,
         notes: c.notes || undefined,
         status: c.status,
+        is_system: false, // Legacy clients are never system clients
         start_date: toDbDate(c.start_date instanceof Date ? c.start_date : new Date(c.start_date || c.created_at)),
         pause_from: c.pause_from ? toDbDate(c.pause_from instanceof Date ? c.pause_from : new Date(c.pause_from)) : undefined,
         pause_to: c.pause_to ? toDbDate(c.pause_to instanceof Date ? c.pause_to : new Date(c.pause_to)) : undefined,

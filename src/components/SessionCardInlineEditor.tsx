@@ -128,12 +128,10 @@ export function SessionCardInlineEditor({
         price_override: priceOverride,
       });
       setSnackbar({ message: 'Пометки сохранены', type: 'success' });
-      setTimeout(() => setSnackbar(null), 3000);
       onNotesSaved(updated);
       onCollapse();
     } catch {
       setSnackbar({ message: 'Ошибка при сохранении', type: 'error' });
-      setTimeout(() => setSnackbar(null), 4000);
     } finally {
       setIsSavingNotes(false);
     }
@@ -302,7 +300,7 @@ export function SessionCardInlineEditor({
         />
       )}
 
-      <Snackbar message={snackbar?.message ?? ''} type={snackbar?.type ?? 'success'} visible={snackbar !== null} onClose={() => setSnackbar(null)} />
+      <Snackbar message={snackbar?.message ?? ''} type={snackbar?.type ?? 'success'} visible={snackbar !== null} onClose={() => setSnackbar(null)} autoHideDuration={snackbar?.type === 'error' ? 4000 : 3000} />
     </>
   );
 }

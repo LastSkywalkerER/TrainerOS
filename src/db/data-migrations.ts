@@ -16,10 +16,21 @@ export function migrateDataLegacyToV1(data: BackupData): BackupData {
   };
 }
 
+/** Add is_system to clients when restoring from backup without it */
+function migrateBackupV1AddIsSystem(data: BackupData): BackupData {
+  return {
+    ...data,
+    clients: data.clients.map((c) => ({
+      ...c,
+      is_system: c.is_system ?? false,
+    })),
+  };
+}
+
 // Chain of migration functions indexed by target version
 // Key = target dbVersion, value = migration function from previous version
 const migrations: Record<number, (data: BackupData) => BackupData> = {
-  // 1: migrateDataV0toV1, // Reserved for future schema changes
+  1: migrateBackupV1AddIsSystem,
 };
 
 /**

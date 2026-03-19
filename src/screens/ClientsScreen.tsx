@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Client } from '../db/types';
+import { Client, PERSONAL_NOTES_CLIENT_ID } from '../db/types';
 import { clientService } from '../services/ClientService';
 import { ClientCard } from '../components/ClientCard';
 import { ClientForm } from '../components/ClientForm';
@@ -86,7 +86,8 @@ export function ClientsScreen() {
     const allClients = await clientService.getAll(
       filter === 'all' ? undefined : { status: filter }
     );
-    setClients(allClients);
+    // Exclude system client (Мои заметки) from clients list - it has its own access via icon
+    setClients(allClients.filter((c) => c.id !== PERSONAL_NOTES_CLIENT_ID));
   }
 
   const filteredClients = clients
@@ -141,7 +142,18 @@ export function ClientsScreen() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Клиенты</h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Клиенты</h1>
+        <button
+          onClick={() => navigate(`/clients/${PERSONAL_NOTES_CLIENT_ID}?tab=sessions`)}
+          className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+          title="Мои заметки"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+      </div>
 
       {/* Search */}
       <input

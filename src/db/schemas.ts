@@ -3,7 +3,7 @@
 import type { RxJsonSchema } from 'rxdb';
 
 export const clientSchema: RxJsonSchema<any> = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -19,6 +19,7 @@ export const clientSchema: RxJsonSchema<any> = {
     archive_date: { type: 'string', format: 'date-time' },
     created_at: { type: 'string', format: 'date-time' },
     updated_at: { type: 'string', format: 'date-time' },
+    is_system: { type: 'boolean' },
   },
   required: ['id', 'full_name', 'status', 'start_date', 'created_at', 'updated_at'],
   indexes: ['status', 'full_name'],

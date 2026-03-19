@@ -78,7 +78,6 @@ export function SummaryScreen() {
 
   function showSnackbar(message: string, type: 'success' | 'error') {
     setSnackbar({ message, type });
-    setTimeout(() => setSnackbar(null), 5000);
   }
 
   return (
@@ -191,6 +190,7 @@ export function SummaryScreen() {
         type={snackbar?.type || 'success'}
         visible={snackbar !== null}
         onClose={() => setSnackbar(null)}
+        autoHideDuration={5000}
       />
     </div>
   );
